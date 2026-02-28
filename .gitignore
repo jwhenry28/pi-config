@@ -1,2 +1,5 @@
 # Pi Artifacts
 .pi/memory
+
+# Dependencies
+node_modules/
