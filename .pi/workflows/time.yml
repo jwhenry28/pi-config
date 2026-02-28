@@ -4,3 +4,17 @@ steps:
     model: claude-haiku-4-5
     prompt: |
       Run the `date` command to get the current time, then write the output to time.txt.
+
+  - name: Journal Entry
+    model: claude-haiku-4-5
+    prompt: |
+      Read time.txt, then add a random, creative "journal" entry below the timestamp.
+      It should be a short, whimsical observation about the day, the universe, or anything at all.
+      Write it back to time.txt, keeping the timestamp at the top.
+
+  - name: Sign the File
+    model: claude-haiku-4-5
+    prompt: |
+      Read time.txt and append a signature line at the very end of the file.
+      The signature should be a fun, creative sign-off from an AI, like an artist signing a painting.
+      Keep all existing content intact.
