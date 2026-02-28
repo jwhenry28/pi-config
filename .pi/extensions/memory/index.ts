@@ -1,108 +1,17 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, statSync, readdirSync } from "node:fs";
+import { existsSync, unlinkSync, statSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-
-// --- Types ---
-
-interface MemoryMetadata {
-  created: string;
-  last_updated: string;
-  last_visited: string;
-}
-
-interface MemoryFile {
-  metadata: MemoryMetadata;
-  entries: Record<string, string>; // key -> base64-encoded value
-}
-
-// --- Helpers ---
-
-const DOMAIN_RE = /^[a-zA-Z0-9_-]+$/;
-
-function validateDomain(domain: string): string | null {
-  if (!DOMAIN_RE.test(domain)) return "Domain must match [a-zA-Z0-9_-]+";
-  return null;
-}
-
-function validateKey(key: string): string | null {
-  if (key === "metadata") return '"metadata" is a reserved key';
-  if (key.length === 0) return "Key cannot be empty";
-  return null;
-}
-
-function memoryDir(cwd: string): string {
-  return join(cwd, ".pi-memory");
-}
-
-function domainPath(cwd: string, domain: string): string {
-  return join(memoryDir(cwd), `${domain}.json`);
-}
-
-function now(): string {
-  return new Date().toISOString();
-}
-
-function readDomain(cwd: string, domain: string): MemoryFile | null {
-  const p = domainPath(cwd, domain);
-  if (!existsSync(p)) return null;
-  return JSON.parse(readFileSync(p, "utf-8")) as MemoryFile;
-}
-
-function writeDomain(cwd: string, domain: string, data: MemoryFile): void {
-  const dir = memoryDir(cwd);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(domainPath(cwd, domain), JSON.stringify(data, null, 2), "utf-8");
-}
-
-// --- Core operations ---
-
-function memoryCreate(cwd: string, domain: string): string {
-  const err = validateDomain(domain);
-  if (err) return `Error: ${err}`;
-  if (readDomain(cwd, domain)) return `Error: Domain "${domain}" already exists`;
-  const ts = now();
-  writeDomain(cwd, domain, {
-    metadata: { created: ts, last_updated: ts, last_visited: ts },
-    entries: {},
-  });
-  return `Created domain "${domain}"`;
-}
-
-function memoryAdd(cwd: string, domain: string, key: string, value: string): string {
-  const domErr = validateDomain(domain);
-  if (domErr) return `Error: ${domErr}`;
-  const keyErr = validateKey(key);
-  if (keyErr) return `Error: ${keyErr}`;
-  const data = readDomain(cwd, domain);
-  if (!data) return `Error: Domain "${domain}" does not exist`;
-  data.entries[key] = Buffer.from(value).toString("base64");
-  data.metadata.last_updated = now();
-  writeDomain(cwd, domain, data);
-  return `Added key "${key}" to domain "${domain}"`;
-}
-
-function memoryGet(cwd: string, domain: string, key: string): string {
-  const domErr = validateDomain(domain);
-  if (domErr) return `Error: ${domErr}`;
-  const data = readDomain(cwd, domain);
-  if (!data) return `Error: Domain "${domain}" does not exist`;
-  const encoded = data.entries[key];
-  if (encoded === undefined) return `Error: Key "${key}" not found in domain "${domain}"`;
-  data.metadata.last_visited = now();
-  writeDomain(cwd, domain, data);
-  return Buffer.from(encoded, "base64").toString("utf-8");
-}
-
-function memoryList(cwd: string, domain: string): string {
-  const domErr = validateDomain(domain);
-  if (domErr) return `Error: ${domErr}`;
-  const data = readDomain(cwd, domain);
-  if (!data) return `Error: Domain "${domain}" does not exist`;
-  const keys = Object.keys(data.entries);
-  if (keys.length === 0) return `Domain "${domain}" has no entries`;
-  return keys.join("\n");
-}
+import {
+  memoryDir,
+  domainPath,
+  validateDomain,
+  readDomain,
+  createDomain,
+  addEntry,
+  getEntry,
+  listKeys,
+} from "./store.js";
 
 // --- Extension ---
 
@@ -117,7 +26,7 @@ export default function (pi: ExtensionAPI) {
       domain: Type.String({ description: "Domain identifier" }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = memoryCreate(ctx.cwd, params.domain);
+      const result = createDomain(ctx.cwd, params.domain);
       return { content: [{ type: "text", text: result }], details: {} };
     },
   });
@@ -133,7 +42,7 @@ export default function (pi: ExtensionAPI) {
       value: Type.String({ description: "Memory value" }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = memoryAdd(ctx.cwd, params.domain, params.key, params.value);
+      const result = addEntry(ctx.cwd, params.domain, params.key, params.value);
       return { content: [{ type: "text", text: result }], details: {} };
     },
   });
@@ -147,7 +56,7 @@ export default function (pi: ExtensionAPI) {
       key: Type.String({ description: "Memory key" }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = memoryGet(ctx.cwd, params.domain, params.key);
+      const result = getEntry(ctx.cwd, params.domain, params.key);
       return { content: [{ type: "text", text: result }], details: {} };
     },
   });
@@ -160,7 +69,7 @@ export default function (pi: ExtensionAPI) {
       domain: Type.String({ description: "Domain identifier" }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = memoryList(ctx.cwd, params.domain);
+      const result = listKeys(ctx.cwd, params.domain);
       return { content: [{ type: "text", text: result }], details: {} };
     },
   });
@@ -198,7 +107,7 @@ export default function (pi: ExtensionAPI) {
         case "create": {
           const domain = parts[1];
           if (!domain) { ctx.ui.notify("Usage: /memory create <domain>", "warning"); return; }
-          ctx.ui.notify(memoryCreate(ctx.cwd, domain), "info");
+          ctx.ui.notify(createDomain(ctx.cwd, domain), "info");
           break;
         }
         case "add": {
@@ -206,21 +115,21 @@ export default function (pi: ExtensionAPI) {
           const key = parts[2];
           const value = parts.slice(3).join(" ");
           if (!domain || !key || !value) { ctx.ui.notify("Usage: /memory add <domain> <key> <value>", "warning"); return; }
-          ctx.ui.notify(memoryAdd(ctx.cwd, domain, key, value), "info");
+          ctx.ui.notify(addEntry(ctx.cwd, domain, key, value), "info");
           break;
         }
         case "get": {
           const domain = parts[1];
           const key = parts[2];
           if (!domain || !key) { ctx.ui.notify("Usage: /memory get <domain> <key>", "warning"); return; }
-          const result = memoryGet(ctx.cwd, domain, key);
+          const result = getEntry(ctx.cwd, domain, key);
           ctx.ui.notify(result, result.startsWith("Error") ? "error" : "info");
           break;
         }
         case "list": {
           const domain = parts[1];
           if (!domain) { ctx.ui.notify("Usage: /memory list <domain>", "warning"); return; }
-          const result = memoryList(ctx.cwd, domain);
+          const result = listKeys(ctx.cwd, domain);
           ctx.ui.notify(result, result.startsWith("Error") ? "error" : "info");
           break;
         }

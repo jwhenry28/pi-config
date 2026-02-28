@@ -26,12 +26,61 @@ export default function modulesExtension(pi: ExtensionAPI) {
   }
 
   /**
+   * Ensure modules are discovered and state is loaded.
+   */
+  function ensureInitialized(): void {
+    if (!initialized) {
+      refreshModules();
+      initialized = true;
+    }
+  }
+
+  /**
    * Apply tool filtering based on current module state.
    */
   function applyToolFiltering(): void {
     const allToolNames = pi.getAllTools().map(t => t.name);
     const activeTools = computeActiveTools(allToolNames, modules, state);
     pi.setActiveTools(activeTools);
+  }
+
+  /**
+   * Persist state and reapply tool filtering. Called after any state mutation.
+   */
+  function commitState(): void {
+    saveState(cwd, state);
+    applyToolFiltering();
+  }
+
+  /**
+   * Load a module by name. Returns false if the module doesn't exist or is already loaded.
+   */
+  function loadModule(name: string): boolean {
+    if (!modules.has(name)) return false;
+    if (state.loaded.includes(name)) return false;
+    state.loaded.push(name);
+    commitState();
+    return true;
+  }
+
+  /**
+   * Unload a module by name. Returns false if the module doesn't exist or isn't loaded.
+   */
+  function unloadModule(name: string): boolean {
+    if (!modules.has(name)) return false;
+    const idx = state.loaded.indexOf(name);
+    if (idx === -1) return false;
+    state.loaded.splice(idx, 1);
+    commitState();
+    return true;
+  }
+
+  /**
+   * Set the exact list of loaded modules. Invalid names are silently ignored.
+   */
+  function setModules(names: string[]): void {
+    state.loaded = names.filter(name => modules.has(name));
+    commitState();
   }
 
   /**
@@ -66,10 +115,7 @@ export default function modulesExtension(pi: ExtensionAPI) {
   });
 
   pi.on("before_agent_start", async (event) => {
-    if (!initialized) {
-      refreshModules();
-      initialized = true;
-    }
+    ensureInitialized();
 
     const filteredPrompt = filterSkillsFromPrompt(event.systemPrompt);
 
@@ -122,10 +168,7 @@ export default function modulesExtension(pi: ExtensionAPI) {
         return;
       }
 
-      if (!initialized) {
-        refreshModules();
-        initialized = true;
-      }
+      ensureInitialized();
 
       switch (subcommand) {
         case "load": {
@@ -138,13 +181,10 @@ export default function modulesExtension(pi: ExtensionAPI) {
             ctx.ui.notify(`Module "${moduleName}" not found`, "error");
             return;
           }
-          if (state.loaded.includes(moduleName)) {
+          if (!loadModule(moduleName)) {
             ctx.ui.notify(`Module "${moduleName}" is already loaded`, "warning");
             return;
           }
-          state.loaded.push(moduleName);
-          saveState(cwd, state);
-          applyToolFiltering();
           const contents = modules.get(moduleName)!;
           ctx.ui.notify(`✓ Loaded module "${moduleName}" (${contents.skills.length} skill(s), ${contents.tools.length} tool(s))`, "info");
           break;
@@ -160,14 +200,10 @@ export default function modulesExtension(pi: ExtensionAPI) {
             ctx.ui.notify(`Module "${moduleName}" not found`, "error");
             return;
           }
-          const idx = state.loaded.indexOf(moduleName);
-          if (idx === -1) {
+          if (!unloadModule(moduleName)) {
             ctx.ui.notify(`Module "${moduleName}" is not loaded`, "warning");
             return;
           }
-          state.loaded.splice(idx, 1);
-          saveState(cwd, state);
-          applyToolFiltering();
           const contents = modules.get(moduleName)!;
           ctx.ui.notify(`✓ Unloaded module "${moduleName}" (${contents.skills.length} skill(s), ${contents.tools.length} tool(s))`, "info");
           break;
@@ -237,44 +273,22 @@ export default function modulesExtension(pi: ExtensionAPI) {
   // --- Programmatic event API ---
 
   pi.events.on("module:load", (data: { name: string }) => {
-    if (!initialized) {
-      refreshModules();
-      initialized = true;
-    }
-    if (!modules.has(data.name)) return;
-    if (state.loaded.includes(data.name)) return;
-    state.loaded.push(data.name);
-    saveState(cwd, state);
-    applyToolFiltering();
+    ensureInitialized();
+    loadModule(data.name);
   });
 
   pi.events.on("module:unload", (data: { name: string }) => {
-    if (!initialized) {
-      refreshModules();
-      initialized = true;
-    }
-    const idx = state.loaded.indexOf(data.name);
-    if (idx === -1) return;
-    state.loaded.splice(idx, 1);
-    saveState(cwd, state);
-    applyToolFiltering();
+    ensureInitialized();
+    unloadModule(data.name);
   });
 
   pi.events.on("module:set", (data: { names: string[] }) => {
-    if (!initialized) {
-      refreshModules();
-      initialized = true;
-    }
-    state.loaded = data.names.filter(name => modules.has(name));
-    saveState(cwd, state);
-    applyToolFiltering();
+    ensureInitialized();
+    setModules(data.names);
   });
 
   pi.events.on("module:get-state", (data: { callback: (info: { loaded: string[]; modules: Map<string, ModuleContents> }) => void }) => {
-    if (!initialized) {
-      refreshModules();
-      initialized = true;
-    }
+    ensureInitialized();
     data.callback({ loaded: [...state.loaded], modules });
   });
 }
