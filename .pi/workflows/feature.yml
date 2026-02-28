@@ -1,0 +1,48 @@
+name: Feature Implementation
+steps:
+  - name: Brainstorm
+    model: claude-opus-4-6
+    prompt: |
+      Brainstorm with the user to flesh out all the details of their feature.
+      After finishing brainstorming, store the location of your design document
+      to the memory store under the key "design-doc". Use the workflow ID from
+      the "Workflow:" line at the top of this message as the memory domain.
+    skills:
+      - brainstorming
+    approval: true
+
+  - name: Plan
+    model: claude-opus-4-6
+    prompt: |
+      In the previous step, we made a design specification document for the
+      requested feature. You can find the location of that document in the
+      memory store — use the workflow ID from the "Workflow:" line at the top
+      of this message as the memory domain, and retrieve the key "design-doc".
+
+      Turn that design spec into a detailed, step-by-step implementation plan.
+      Once you have finished the plan, save the following to the memory store:
+      - "plan" — the path to the plan directory (e.g. docs/feature-name/)
+      - "plan-todo" — the path to the plan's todo.md file (e.g. docs/feature-name/todo.md)
+    skills:
+      - writing-plans
+
+  - name: Implement
+    model: claude-opus-4-6
+    prompt: |
+      In the previous step, we made a detailed, step-by-step plan to implement
+      the requested feature. You can find the location of that plan in the
+      memory store — use the workflow ID from the "Workflow:" line at the top
+      of this message as the memory domain, and retrieve the key "plan".
+
+      Execute the plan.
+    skills:
+      - executing-plans
+    conditions:
+      - prompt: |
+          Use the workflow memory to read the key "plan-todo" from the memory
+          domain (the workflow ID from the "Workflow:" line at the top of this
+          message). That gives you the path to todo.md. Read that file and check
+          whether all tasks are marked as completed ([x]). If any remain
+          unchecked ([ ]), the condition is true — there is still work to do.
+        model: claude-haiku-4-5
+        jump: Implement
