@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
 import type { Skill } from "@mariozechner/pi-coding-agent";
-import { getToolModuleMap } from "./api.js";
 
 export interface ModuleContents {
   skills: Skill[];
@@ -31,7 +30,7 @@ function extractSkillModule(filePath: string): string | undefined {
  * Returns a map of module name → { skills, tools }.
  * Skills and tools not assigned to any module are NOT included.
  */
-export function discoverModules(allSkills: Skill[]): Map<string, ModuleContents> {
+export function discoverModules(allSkills: Skill[], toolModuleMap: ReadonlyMap<string, string>): Map<string, ModuleContents> {
   const modules = new Map<string, ModuleContents>();
 
   const ensureModule = (name: string): ModuleContents => {
@@ -50,9 +49,8 @@ export function discoverModules(allSkills: Skill[]): Map<string, ModuleContents>
     ensureModule(moduleName).skills.push(skill);
   }
 
-  // Scan tool tags from api.ts
-  const toolMap = getToolModuleMap();
-  for (const [toolName, moduleName] of toolMap) {
+  // Scan tool tags collected via the event bus
+  for (const [toolName, moduleName] of toolModuleMap) {
     ensureModule(moduleName).tools.push(toolName);
   }
 

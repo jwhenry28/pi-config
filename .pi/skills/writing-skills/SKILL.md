@@ -10,7 +10,7 @@ module: pi-development
 
 A **skill** is a reference guide for proven techniques, patterns, or tools. Skills help future Claude instances find and apply effective approaches.
 
-**Skills ALWAYS live at the project level (`./.claude/skills`), never in personal directories (`~/.claude/skills`).** Skills are project-specific and shared between developers across workstations.
+**Skills ALWAYS live at the project level (`./.pi/skills`), never in personal directories (`~/.pi/skills`).** Skills are project-specific and shared between developers across workstations.
 
 **Official guidance:** For Anthropic's official skill authoring best practices, see [anthropic-best-practices.md](./anthropic-best-practices.md). This document provides additional patterns and guidelines.
 
@@ -44,10 +44,10 @@ API docs, syntax guides, tool documentation (office docs)
 
 ## Directory Structure
 
-**All skills live at project level:** `./.claude/skills/`
+**All skills live at project level:** `./.pi/skills/`
 
 ```
-.claude/
+.pi/
   skills/
     skill-name/
       SKILL.md              # Main reference (required)
@@ -68,18 +68,20 @@ API docs, syntax guides, tool documentation (office docs)
 ## SKILL.md Structure
 
 **Frontmatter (YAML):**
-- Only two fields supported: `name` and `description`
-- Max 1024 characters total
+- Three fields supported: `name`, `description`, and `module`
+- Max 1024 characters total for name + description
 - `name`: Use letters, numbers, and hyphens only (no parentheses, special chars)
 - `description`: Third-person, includes BOTH what it does AND when to use it
   - Start with "Use when..." to focus on triggering conditions
   - Include specific symptoms, situations, and contexts
   - Keep under 500 characters if possible
+- `module`: Optional. Assigns the skill to a named module (see [Modules](#modules) below)
 
 ```markdown
 ---
 name: Skill-Name-With-Hyphens
 description: Use when [specific triggering conditions and symptoms] - [what the skill does and how it helps, written in third person]
+module: module-name
 ---
 
 # Skill Name
@@ -311,6 +313,68 @@ pptx/
 ```
 When: Reference material too large for inline
 
+## Modules
+
+**Modules** group related skills and tools so they can be loaded/unloaded as a unit. This saves context by keeping irrelevant skills out of the system prompt until needed.
+
+### How It Works
+
+1. Add `module: <name>` to a skill's YAML frontmatter
+2. Skills with the same module name are grouped together
+3. The `/module` command controls which modules are active
+4. **Unloaded** module skills are filtered from the system prompt and their tools are deactivated
+5. **Skills without a module** are always visible — modules are opt-in
+6. Module state persists across sessions
+
+### When to Use Modules
+
+- **Large projects** with many domain-specific skill groups (e.g., `design`, `deployment`, `testing`)
+- **Context-heavy skills** that burn tokens when loaded unnecessarily
+- **Tool bundles** where custom tools should only appear when relevant
+
+Don't use modules for skills that are small and broadly applicable — just leave them unmodulated.
+
+### Assigning a Skill to a Module
+
+```yaml
+---
+name: writing-workflows
+description: Use when writing workflow YAML files...
+module: pi-development
+---
+```
+
+### Tagging Tools to a Module
+
+Extensions can tag their tools using the `moduleTag()` API from the modules extension:
+
+```typescript
+import { moduleTag } from "../modules/api.js";
+
+pi.registerTool(moduleTag(pi, "design", {
+  name: "design_review",
+  // ... tool definition
+}));
+```
+
+Tagged tools are deactivated when their module is unloaded.
+
+### Module Commands
+
+| Command | Description |
+|---------|-------------|
+| `/module list` | Show all discovered modules |
+| `/module list <name>` | Show skills and tools in a module |
+| `/module load <name>` | Activate a module |
+| `/module unload <name>` | Deactivate a module |
+| `/module status` | Show currently loaded modules |
+
+### Naming Conventions
+
+- Use lowercase with hyphens: `pi-development`, `data-processing`
+- Group by domain/concern, not by skill type
+- Keep module count manageable (5-10, not 50)
+
 ## Discipline-Enforcing Skills
 
 Skills that enforce discipline (like verification requirements or mandatory review steps) need extra care to resist rationalization. Agents are smart and will find loopholes when under pressure.
@@ -395,9 +459,10 @@ helper1, helper2, step3, pattern4
 
 **Structure:**
 - [ ] Name uses only letters, numbers, hyphens (no parentheses/special chars)
-- [ ] YAML frontmatter with only name and description (max 1024 chars)
+- [ ] YAML frontmatter with name, description (max 1024 chars), and optionally module
 - [ ] Description starts with "Use when..." and includes specific triggers/symptoms
 - [ ] Description written in third person
+- [ ] Module assigned if skill belongs to a domain-specific group (see [Modules](#modules))
 - [ ] Keywords throughout for search (errors, symptoms, tools)
 - [ ] Clear overview with core principle
 

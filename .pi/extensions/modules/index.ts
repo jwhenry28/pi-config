@@ -3,6 +3,7 @@ import { loadSkills } from "@mariozechner/pi-coding-agent";
 import type { Skill } from "@mariozechner/pi-coding-agent";
 import { discoverModules, type ModuleContents } from "./registry.js";
 import { loadState, saveState, computeActiveTools, computeExcludedSkillNames, type ModuleState } from "./state.js";
+import type { ModuleToolTagEvent } from "./api.js";
 
 export default function modulesExtension(pi: ExtensionAPI) {
   // --- Shared state ---
@@ -13,6 +14,22 @@ export default function modulesExtension(pi: ExtensionAPI) {
   let state: ModuleState = { loaded: [], granular: {} };
   let initialized = false;
 
+  /**
+   * Tool-to-module associations collected via the shared event bus.
+   * Other extensions emit "module:tool-tag" events (via moduleTag() from api.ts)
+   * which are captured here. This works across extension boundaries because
+   * pi.events is a shared event bus, unlike module-level state which is
+   * isolated per extension due to jiti's moduleCache: false.
+   */
+  const toolModuleMap = new Map<string, string>();
+
+  // Listen for tool-module tagging events from other extensions.
+  // These fire synchronously during extension loading (inside pi.registerTool(moduleTag(...))),
+  // so by the time ensureInitialized() runs, all tags are already collected.
+  pi.events.on("module:tool-tag", (data: ModuleToolTagEvent) => {
+    toolModuleMap.set(data.toolName, data.moduleName);
+  });
+
   // --- Helpers ---
 
   /**
@@ -20,7 +37,7 @@ export default function modulesExtension(pi: ExtensionAPI) {
    * Called on initialization and after any state change.
    */
   function refreshModules(): void {
-    modules = discoverModules(allSkills);
+    modules = discoverModules(allSkills, toolModuleMap);
     state = loadState(cwd);
     applyToolFiltering();
   }

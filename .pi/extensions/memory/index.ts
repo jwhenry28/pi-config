@@ -11,6 +11,7 @@ import {
   addEntry,
   getEntry,
   listKeys,
+  deleteEntry,
 } from "./store.js";
 
 // --- Extension ---
@@ -74,6 +75,20 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  pi.registerTool({
+    name: "memory_delete",
+    label: "Memory Delete",
+    description: "Delete a key from a memory domain.",
+    parameters: Type.Object({
+      domain: Type.String({ description: "Domain identifier" }),
+      key: Type.String({ description: "Memory key" }),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const result = deleteEntry(ctx.cwd, params.domain, params.key);
+      return { content: [{ type: "text", text: result }], details: {} };
+    },
+  });
+
   // --- Command ---
 
   pi.registerCommand("memory", {
@@ -93,6 +108,7 @@ export default function (pi: ExtensionAPI) {
             "  list <domain>                List all keys in a domain",
             "  purge <domain|all>           Delete a domain or all domains (with confirmation)",
             "  stats <domain>               Show domain metadata and size",
+            "  delete <domain> <key>         Delete a key from a domain",
             "  help                         Show this help message",
             "",
             "Domain names must match [a-zA-Z0-9_-]+.",
@@ -177,8 +193,16 @@ export default function (pi: ExtensionAPI) {
           ctx.ui.notify(lines.join("\n"), "info");
           break;
         }
+        case "delete": {
+          const domain = parts[1];
+          const key = parts[2];
+          if (!domain || !key) { ctx.ui.notify("Usage: /memory delete <domain> <key>", "warning"); return; }
+          const result = deleteEntry(ctx.cwd, domain, key);
+          ctx.ui.notify(result, result.startsWith("Error") ? "error" : "info");
+          break;
+        }
         default:
-          ctx.ui.notify(`Unknown subcommand: ${subcommand}. Use create, add, get, list, purge, or stats.`, "warning");
+          ctx.ui.notify(`Unknown subcommand: ${subcommand}. Use create, add, get, list, purge, stats, or delete.`, "warning");
       }
     },
   });

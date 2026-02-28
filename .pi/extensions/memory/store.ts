@@ -137,3 +137,17 @@ export function writeKey(cwd: string, domain: string, key: string, value: string
   data.metadata.last_updated = now();
   writeDomain(cwd, domain, data);
 }
+
+export function deleteEntry(cwd: string, domain: string, key: string): string {
+  const domErr = validateDomain(domain);
+  if (domErr) return `Error: ${domErr}`;
+  const keyErr = validateKey(key);
+  if (keyErr) return `Error: ${keyErr}`;
+  const data = readDomain(cwd, domain);
+  if (!data) return `Error: Domain "${domain}" does not exist`;
+  if (data.entries[key] === undefined) return `Error: Key "${key}" not found in domain "${domain}"`;
+  delete data.entries[key];
+  data.metadata.last_updated = now();
+  writeDomain(cwd, domain, data);
+  return `Deleted key "${key}" from domain "${domain}"`;
+}

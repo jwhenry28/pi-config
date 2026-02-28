@@ -33,22 +33,6 @@ Example: `/write-plan plans/feature-name/design.md`
 
 **Output location:** Write plan files into the same directory as the design document (e.g., `plans/<feature-name>/`).
 
-## Project Guidelines
-
-**MANDATORY:** Read ALL three guideline files before writing the plan. All implementation tasks MUST adhere to these guidelines:
-
-- @.claude/library/architecture-guidelines.md - SOLID, DRY, YAGNI principles
-- @.claude/library/coding-guidelines.md - Naming, code organization, stepdown rule
-- @.claude/library/testing-structure.md - Test organization and design
-- @.claude/library/testing-guidelines.md - Test coverage, consolidation, and best practices
-
-When writing tasks:
-
-- Ensure proposed code follows architecture principles (Single Responsibility, proper separation of concerns)
-- Include code examples that follow naming conventions and stepdown rule
-- Design tests that are consolidated, meaningful, and not fragile
-- Call out any guideline violations in the design and propose fixes
-
 ## MANDATORY Workflow - Follow These Steps IN ORDER
 
 **Step 0: Read the design document**
