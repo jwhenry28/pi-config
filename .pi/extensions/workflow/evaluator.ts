@@ -12,6 +12,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { StepCondition } from "./types.js";
 import { resolvePrompt } from "./loader.js";
+import { resolveModelAlias, parseModelRef } from "./models.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const conditionTemplate = readFileSync(join(__dirname, "condition-prompt.md"), "utf-8");
@@ -58,9 +59,25 @@ export async function evaluateCondition(
 	const resolvedPrompt = resolvePrompt(condition.prompt, cwd);
 	const systemPrompt = conditionTemplate.replace("%CONDITION_PROMPT%", resolvedPrompt);
 
-	const model = ctx.modelRegistry.getAll().find((m) => m.id === condition.model);
+	// Resolve model alias to actual model reference (may include provider prefix)
+	const resolvedModelRef = resolveModelAlias(condition.model, cwd);
+	const { provider: specifiedProvider, modelId } = parseModelRef(resolvedModelRef);
+	
+	let model: any = null;
+	
+	// If provider is explicitly specified, use registry.find()
+	if (specifiedProvider) {
+		const registryAny = ctx.modelRegistry as any;
+		if (registryAny.find) {
+			model = registryAny.find(specifiedProvider, modelId);
+		}
+	} else {
+		// No provider specified, look up by model ID only
+		model = ctx.modelRegistry.getAll().find((m) => m.id === modelId);
+	}
+	
 	if (!model) {
-		ctx.ui.notify(`Condition model "${condition.model}" not found`, "error");
+		ctx.ui.notify(`Condition model "${condition.model}" (resolved to "${resolvedModelRef}") not found in registry`, "error");
 		return null;
 	}
 

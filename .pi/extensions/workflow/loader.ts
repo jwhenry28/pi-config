@@ -4,6 +4,7 @@ import { parse as parseYaml } from "yaml";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { Skill } from "@mariozechner/pi-coding-agent";
 import type { WorkflowConfig, WorkflowStep } from "./types.js";
+import { resolveModelAlias, parseModelRef } from "./models.js";
 
 export function getWorkflowsDir(cwd: string): string {
 	return join(cwd, ".pi", "workflows");
@@ -40,6 +41,10 @@ export function loadWorkflowFile(name: string, cwd: string): WorkflowConfig {
 		if (!s.name) throw new Error(`Step ${idx + 1} missing 'name'`);
 		if (!s.model) throw new Error(`Step ${idx + 1} missing 'model'`);
 		if (!s.prompt) throw new Error(`Step ${idx + 1} missing 'prompt'`);
+		
+		// Resolve model alias to actual model ID
+		const resolvedModel = resolveModelAlias(s.model as string, cwd);
+		
 		const conditions = s.conditions
 			? (s.conditions as Record<string, unknown>[]).map((c, ci) => {
 				if (!c.prompt) throw new Error(`Step ${idx + 1}, condition ${ci + 1} missing 'prompt'`);
@@ -47,7 +52,7 @@ export function loadWorkflowFile(name: string, cwd: string): WorkflowConfig {
 				if (!c.jump) throw new Error(`Step ${idx + 1}, condition ${ci + 1} missing 'jump'`);
 				return {
 					prompt: c.prompt as string,
-					model: c.model as string,
+					model: resolveModelAlias(c.model as string, cwd),
 					jump: c.jump as string,
 				};
 			})
@@ -55,7 +60,7 @@ export function loadWorkflowFile(name: string, cwd: string): WorkflowConfig {
 
 		return {
 			name: s.name as string,
-			model: s.model as string,
+			model: resolvedModel,
 			prompt: s.prompt as string,
 			skills: (s.skills as string[]) ?? [],
 			approval: s.approval === true,
@@ -79,9 +84,22 @@ export function resolvePrompt(prompt: string, cwd: string): string {
 
 export function validate(config: WorkflowConfig, cwd: string, allSkills: Skill[], ctx: ExtensionContext): string | null {
 	const allModels = ctx.modelRegistry.getAll();
+	const registryAny = ctx.modelRegistry as any;
 	for (const step of config.steps) {
-		if (!allModels.find((m) => m.id === step.model)) {
-			return `Model "${step.model}" not found in registry`;
+		// Resolve model alias before validation
+		const resolvedModelRef = resolveModelAlias(step.model, cwd);
+		const { provider: specifiedProvider, modelId } = parseModelRef(resolvedModelRef);
+		
+		let inRegistry: boolean;
+		if (specifiedProvider && registryAny.find) {
+			// Provider explicitly specified, use registry.find()
+			inRegistry = !!registryAny.find(specifiedProvider, modelId);
+		} else {
+			// No provider specified, look up by model ID only
+			inRegistry = allModels.some((m) => m.id === modelId);
+		}
+		if (!inRegistry) {
+			return `Model "${step.model}" (resolved to "${resolvedModelRef}") not found in registry`;
 		}
 
 		if (step.prompt.startsWith("@")) {
@@ -101,8 +119,18 @@ export function validate(config: WorkflowConfig, cwd: string, allSkills: Skill[]
 
 		if (step.conditions) {
 			for (const cond of step.conditions) {
-				if (!allModels.find((m) => m.id === cond.model)) {
-					return `Step "${step.name}", condition model "${cond.model}" not found in registry`;
+				// Resolve model alias before validation
+				const resolvedCondRef = resolveModelAlias(cond.model, cwd);
+				const { provider: condProvider, modelId: condModelId } = parseModelRef(resolvedCondRef);
+				
+				let condInRegistry: boolean;
+				if (condProvider && registryAny.find) {
+					condInRegistry = !!registryAny.find(condProvider, condModelId);
+				} else {
+					condInRegistry = allModels.some((m) => m.id === condModelId);
+				}
+				if (!condInRegistry) {
+					return `Step "${step.name}", condition model "${cond.model}" (resolved to "${resolvedCondRef}") not found in registry`;
 				}
 				if (!config.steps.find((s) => s.name === cond.jump)) {
 					return `Step "${step.name}", condition jump target "${cond.jump}" not found`;

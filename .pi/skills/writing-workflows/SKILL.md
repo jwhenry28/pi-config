@@ -39,10 +39,59 @@ steps:
 | Field | Required | Default | Description |
 | --- | --- | --- | --- |
 | `name` | Yes | — | Display name shown in the TUI status bar |
-| `model` | Yes | — | Model ID (must match an available model) |
+| `model` | Yes | — | Model ID or alias (see below) |
 | `prompt` | Yes | — | Inline text or `@path` to a markdown file |
 | `skills` | No | `[]` | Skill names to load (empty = no skills) |
 | `approval` | No | `false` | Require `/workflow approve` before advancing |
+
+## Model Aliases
+
+Instead of hardcoding specific model IDs, you can use general aliases that map to different models:
+
+| Alias | Default Model | Use Case |
+| --- | --- | --- |
+| `smart` | `claude-opus-4-6` | Complex reasoning, planning, architecture |
+| `general` | `claude-sonnet-4-6` | Balanced performance and cost |
+| `fast` | `claude-haiku-4-5` | Quick tasks, simple queries |
+
+### Customizing Aliases
+
+Users can override these mappings using the memory store:
+
+```
+/memory add workflow_models smart claude-opus-4-7
+/memory add workflow_models general claude-sonnet-4-7
+/memory add workflow_models fast claude-haiku-4-6
+```
+
+This allows workflows to be written with stable aliases while easily updating to newer models or switching providers.
+
+### Specifying a Provider
+
+If you have custom models defined in `~/.pi/agent/models.json` under a specific provider, you can use the `provider/model-id` format to explicitly select which provider to use. This is useful when multiple providers have models with the same ID, or when you want to use a custom provider without clobbering built-in provider definitions.
+
+Example:
+
+```
+/memory add workflow_models smart custom/kimi-k2.5
+```
+
+Where `custom` is the provider name in your `models.json`:
+
+```json
+{
+  "providers": {
+    "custom": {
+      "baseUrl": "https://api.moonshot.ai/v1",
+      "api": "openai-completions",
+      "apiKey": "MOONSHOT_API_KEY",
+      "models": [{ "id": "kimi-k2.5" }]
+    }
+  }
+}
+```
+
+The workflow extension will use `registry.find("custom", "kimi-k2.5")` to locate the correct model with its associated API key configuration.
 
 ## Prompt Resolution
 
@@ -94,7 +143,7 @@ You are currently on step <step name>. For this step, you must:
 name: Feature Implementation
 steps:
   - name: Plan
-    model: claude-opus-4-6
+    model: smart
     prompt: |
       Analyze the codebase and create a detailed implementation plan.
       Read all relevant files in full. Do not make any changes.
@@ -104,7 +153,7 @@ steps:
     approval: true
 
   - name: Implement
-    model: claude-sonnet-4-5
+    model: general
     prompt: |
       Read the plan in docs/plans/ and implement it step by step.
       Run tests after each change.
@@ -112,7 +161,7 @@ steps:
       - executing-plans
 
   - name: Review
-    model: claude-opus-4-6
+    model: smart
     prompt: |
       Review all changes made in this session.
       Check for correctness, edge cases, and test coverage.
