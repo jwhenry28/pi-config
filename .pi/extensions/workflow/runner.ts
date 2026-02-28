@@ -9,7 +9,7 @@ import { evaluateCondition } from "./evaluator.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function createMemoryDomain(cwd: string, domain: string): void {
-	const dir = join(cwd, ".pi", "memory");
+	const dir = join(cwd, ".pi-memory");
 	const filePath = join(dir, `${domain}.json`);
 	if (existsSync(filePath)) return;
 	if (!existsSync(dir)) mkdirSync(dir, { recursive: true });

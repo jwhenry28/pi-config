@@ -1,6 +1,7 @@
 ---
 name: writing-skills
 description: Use when creating new skills or editing existing skills - provides best practices, structure guidelines, and search optimization for writing effective skill documents that Claude can discover and use
+module: pi-development
 ---
 
 # Writing Skills

@@ -1,6 +1,7 @@
 ---
 name: writing-workflows
 description: Writing workflow YAML files for the /workflow extension - covers schema, step configuration, prompt references, and execution model
+module: pi-development
 ---
 
 # Writing Workflows
