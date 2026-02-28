@@ -1,7 +1,7 @@
 ---
 name: brainstorming
 description: Use when creating or developing, before writing code or implementation plans - refines rough ideas into fully-formed designs through collaborative questioning, alternative exploration, and incremental validation. Don't use during clear 'mechanical' processes
-allowed-tools: Read, Write, Bash
+module: development
 ---
 
 # Brainstorming Ideas Into Designs
@@ -42,7 +42,7 @@ Start by understanding the current project context, then ask questions to refine
 
 **Documentation:**
 
-- Write the validated design to `docs/plans/YYYY-MM-DD-<topic>-design.md`
+- Write the validated design to `plans/<topic>/design.md`
 - Write clearly and concisely
 - Do NOT commit the design to git
 

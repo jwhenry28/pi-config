@@ -1,6 +1,7 @@
 ---
 name: writing-plans
 description: Use when design is complete and you need detailed implementation tasks for engineers with zero codebase context - creates comprehensive implementation plans with exact file paths, complete code examples, and verification steps assuming engineer has minimal domain knowledge
+module: development
 ---
 
 # Writing Plans
@@ -19,7 +20,7 @@ Assume they are a skilled developer, but know almost nothing about our toolset o
 
 **The skill takes ONE required argument: the path to the design document.**
 
-Example: `/write-plan docs/designs/2025-12-26-feature-name.md`
+Example: `/write-plan plans/feature-name/design.md`
 
 **CRITICAL FIRST STEP:** Read the design document at the provided path. This document contains:
 
@@ -30,7 +31,7 @@ Example: `/write-plan docs/designs/2025-12-26-feature-name.md`
 
 **DO NOT proceed** until you've read and understood the design document.
 
-**Output location:** Create the plan directory as `docs/plans/YYYY-MM-DD-<feature-name>/` (derived from the design doc filename, changing `designs` to `plans` and making it a directory).
+**Output location:** Write plan files into the same directory as the design document (e.g., `plans/<feature-name>/`).
 
 ## Project Guidelines
 
@@ -55,23 +56,19 @@ When writing tasks:
 The argument provided to this skill is the path to the design document. Read it first.
 
 ```bash
-# Example: if argument is docs/designs/2025-12-26-user-auth.md
+# Example: if argument is plans/user-auth/design.md
 # Use the Read tool to read this file before proceeding
 ```
 
-**Step 1: Create output directory**
+**Step 1: Identify the plan directory**
 
-Derive the output directory path from the design doc path: `designs/file.md` → `plans/file/`
-
-```bash
-mkdir -p docs/plans/YYYY-MM-DD-<feature-name>
-```
+The plan directory is the same directory as the design document (e.g., `plans/<feature-name>/`).
 
 **Step 2: Write overview.md**
-Create `docs/plans/YYYY-MM-DD-<feature-name>/overview.md` with plan header, architecture, task list (see "Overview File Structure" below)
+Create `plans/<feature-name>/overview.md` with plan header, architecture, task list (see "Overview File Structure" below)
 
 **Step 3: Write todo.md**
-Create `docs/plans/YYYY-MM-DD-<feature-name>/todo.md` with checkboxes for each task:
+Create `plans/<feature-name>/todo.md` with checkboxes for each task:
 
 ```markdown
 # Task Tracking
@@ -84,7 +81,7 @@ Create `docs/plans/YYYY-MM-DD-<feature-name>/todo.md` with checkboxes for each t
 **Important:** Tasks are marked complete by the engineer executing the plan, ONLY after human reviewer approval.
 
 **Step 4: Write each task to separate file**
-For each task, create `docs/plans/YYYY-MM-DD-<feature-name>/taskN-<descriptive-name>.md`
+For each task, create `plans/<feature-name>/taskN-<descriptive-name>.md`
 
 **File naming:** Use descriptive task names in lowercase with hyphens:
 
@@ -92,7 +89,7 @@ For each task, create `docs/plans/YYYY-MM-DD-<feature-name>/taskN-<descriptive-n
 - `task2-registration-endpoint.md`
 - `task3-jwt-token-generation.md`
 
-**NEVER create a single file like `docs/plans/YYYY-MM-DD-<feature-name>.md` - this violates the structure requirement.**
+**NEVER create a single file like `plans/<feature-name>.md` - this violates the structure requirement.**
 
 **ALWAYS create todo.md to track task completion - this is required for execution workflow.**
 
@@ -189,8 +186,8 @@ git commit -m "feat: add specific feature"
 
 If you're about to do any of these, you're violating the file structure requirement:
 
-- Creating file `docs/plans/YYYY-MM-DD-<feature-name>.md` (single file)
-- Skipping the directory creation step
+- Creating file `plans/<feature-name>.md` (single file)
+- Skipping the directory structure
 - Writing multiple tasks into one markdown file
 - Thinking "I'll create one file for simplicity"
 - Forgetting to create `todo.md` with task checkboxes
@@ -210,7 +207,7 @@ If you're about to do any of these, you're violating the file structure requirem
 
 After saving the plan, offer execution choice:
 
-**"Plan complete and saved to `docs/plans/<directory>/`. Two execution options:**
+**"Plan complete and saved to `plans/<feature-name>/`. Two execution options:**
 
 **1. Subagent-Driven (this session)** - I dispatch fresh subagent per task, review between tasks, fast iteration
 

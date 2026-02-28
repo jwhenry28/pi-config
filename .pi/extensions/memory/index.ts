@@ -32,7 +32,7 @@ function validateKey(key: string): string | null {
 }
 
 function memoryDir(cwd: string): string {
-  return join(cwd, ".pi", "memory");
+  return join(cwd, ".pi-memory");
 }
 
 function domainPath(cwd: string, domain: string): string {
