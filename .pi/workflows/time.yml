@@ -1,0 +1,6 @@
+name: Get Time
+steps:
+  - name: Get Current Time
+    model: claude-haiku-4-5
+    prompt: |
+      Run the `date` command to get the current time, then write the output to time.txt.
