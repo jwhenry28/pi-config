@@ -1,9 +1,18 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { loadSkills } from "@mariozechner/pi-coding-agent";
+import type { AutocompleteItem } from "@mariozechner/pi-tui";
 import { handleAdd } from "./add.js";
 import { handleList } from "./list.js";
 import { handleDesign, type Skills } from "./design.js";
 import { handleRemove } from "./remove.js";
+
+const SUBCOMMANDS: AutocompleteItem[] = [
+  { value: "add", label: "add — Add a new todo item" },
+  { value: "list", label: "list — List all open todos" },
+  { value: "design", label: "design — Generate a design for a todo" },
+  { value: "remove", label: "remove — Remove a todo item" },
+  { value: "help", label: "help — Show help message" },
+];
 
 export default function todoExtension(pi: ExtensionAPI) {
   let allSkills: Skills = [];
@@ -15,6 +24,13 @@ export default function todoExtension(pi: ExtensionAPI) {
 
   pi.registerCommand("todo", {
     description: "Manage todo items: add, list, design, remove",
+    getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
+      const trimmed = prefix.trimStart();
+      // Only complete the first word (subcommand), not subsequent arguments
+      if (trimmed.includes(" ")) return null;
+      const filtered = SUBCOMMANDS.filter((item) => item.value.startsWith(trimmed));
+      return filtered.length > 0 ? filtered : null;
+    },
     handler: async (args, ctx) => {
       const parts = args.trim().split(/\s+/);
       const subcommand = parts[0];
