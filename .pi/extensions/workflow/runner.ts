@@ -7,7 +7,7 @@ import type {
   ExtensionCommandContext,
   ContextEvent,
 } from "@mariozechner/pi-coding-agent";
-import type { WorkflowStep, WorkflowState } from "./types.js";
+import type { WorkflowConfig, WorkflowStep, WorkflowState } from "./types.js";
 import { resolvePrompt } from "./loader.js";
 import { evaluateCondition } from "./evaluator.js";
 import { resolveModelAlias, parseModelRef } from "./models.js";
@@ -49,6 +49,38 @@ export async function restoreOriginalModel(
     .find((m) => m.id === state.originalModelId);
   if (model) await pi.setModel(model);
   state.originalModelId = null;
+}
+
+export function computeEffectiveModules(
+  config: WorkflowConfig,
+  step: WorkflowStep,
+): string[] {
+  const workflowModules = config.modules ?? [];
+  const stepModules = step.modules ?? [];
+  return [...new Set([...workflowModules, ...stepModules])];
+}
+
+export function applyStepModules(
+  pi: ExtensionAPI,
+  config: WorkflowConfig,
+  step: WorkflowStep,
+): void {
+  // Always hide all modules first — clean slate for every step
+  pi.events.emit("module:set", { names: [] });
+
+  const effective = computeEffectiveModules(config, step);
+  if (effective.length > 0) {
+    pi.events.emit("module:set", { names: effective });
+  }
+}
+
+export async function restoreOriginalModules(
+  pi: ExtensionAPI,
+  state: WorkflowState,
+): Promise<void> {
+  if (!state.originalModules) return;
+  pi.events.emit("module:set", { names: state.originalModules });
+  state.originalModules = null;
 }
 
 export function currentStep(state: WorkflowState): WorkflowStep | null {
@@ -93,6 +125,66 @@ function injectSkills(
       details: { skillName: skill.name, location: skill.filePath },
     });
   }
+}
+
+/**
+ * Build an <available_skills> block from the effective modules for this step.
+ * Queries the modules extension for module contents, then collects skill
+ * name/description/location from each effective module (workflow + step level).
+ */
+export function buildModuleSkillsBlock(
+  pi: ExtensionAPI,
+  config: WorkflowConfig,
+  step: WorkflowStep,
+): string {
+  // Query modules extension for module contents
+  let allModules: Map<string, any> = new Map();
+  pi.events.emit("module:get-state", {
+    callback: (info: { shown: string[]; modules: Map<string, any> }) => {
+      allModules = info.modules;
+    },
+  });
+
+  // Compute effective modules (workflow-level + step-level, deduplicated)
+  const effective = computeEffectiveModules(config, step);
+
+  // Collect skills from effective modules
+  const seen = new Set<string>();
+  const skills: Array<{ name: string; description: string; filePath: string }> =
+    [];
+  for (const moduleName of effective) {
+    const contents = allModules.get(moduleName);
+    if (!contents?.skills) continue;
+    for (const skill of contents.skills) {
+      if (seen.has(skill.name)) continue;
+      seen.add(skill.name);
+      skills.push(skill);
+    }
+  }
+
+  if (skills.length === 0) return "<available_skills>\n</available_skills>";
+
+  const lines = ["<available_skills>"];
+  for (const skill of skills) {
+    lines.push("  <skill>");
+    lines.push(`    <name>${escapeXml(skill.name)}</name>`);
+    lines.push(
+      `    <description>${escapeXml(skill.description)}</description>`,
+    );
+    lines.push(`    <location>${escapeXml(skill.filePath)}</location>`);
+    lines.push("  </skill>");
+  }
+  lines.push("</available_skills>");
+  return lines.join("\n") + "\n";
+}
+
+function escapeXml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }
 
 function buildMessage(
@@ -165,6 +257,7 @@ export async function runCurrentStep(
   const step = currentStep(state)!;
 
   updateStatus(state, ctx);
+  applyStepModules(pi, state.active.config, step);
 
   if (state.active.currentStepIndex === 0) {
     createMemoryDomain(state.cwd, state.active.id);
@@ -215,6 +308,7 @@ async function completeWorkflow(
   state.active = null;
   updateStatus(state, ctx);
   state.advancing = false;
+  await restoreOriginalModules(pi, state);
   await restoreOriginalModel(pi, state, ctx);
 }
 

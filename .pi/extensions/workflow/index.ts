@@ -3,7 +3,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { loadSkills } from "@mariozechner/pi-coding-agent";
 import type { WorkflowState } from "./types.js";
 import { listWorkflows, loadWorkflowFile, validate } from "./loader.js";
-import { currentStep, updateStatus, runCurrentStep, advanceToNextStep, autoAdvance, autoJump, evaluateConditions, jumpToStep, restoreOriginalModel, filterConditionResults } from "./runner.js";
+import { currentStep, updateStatus, runCurrentStep, advanceToNextStep, autoAdvance, autoJump, evaluateConditions, jumpToStep, restoreOriginalModel, restoreOriginalModules, filterConditionResults, buildModuleSkillsBlock } from "./runner.js";
 
 export default function workflowExtension(pi: ExtensionAPI) {
 	const state: WorkflowState = {
@@ -13,6 +13,7 @@ export default function workflowExtension(pi: ExtensionAPI) {
 		advancing: false,
 		savedCommandCtx: null,
 		originalModelId: null,
+		originalModules: null,
 	};
 
 	// --- Command ---
@@ -66,6 +67,7 @@ export default function workflowExtension(pi: ExtensionAPI) {
 				const name = state.active.config.name;
 				state.active = null;
 				updateStatus(state, ctx);
+				await restoreOriginalModules(pi, state);
 				await restoreOriginalModel(pi, state, ctx);
 				ctx.ui.notify(`Workflow "${name}" aborted`, "info");
 				return;
@@ -97,13 +99,24 @@ export default function workflowExtension(pi: ExtensionAPI) {
 				return;
 			}
 
-			const validationError = validate(config, state.cwd, state.allSkills, ctx);
+			// Query modules extension for known modules and current shown state
+			let knownModules: Set<string> | undefined;
+			let currentShownModules: string[] = [];
+			pi.events.emit("module:get-state", {
+				callback: (info: { shown: string[]; modules: Map<string, unknown> }) => {
+					knownModules = new Set(info.modules.keys());
+					currentShownModules = info.shown;
+				},
+			});
+
+			const validationError = validate(config, state.cwd, state.allSkills, ctx, knownModules);
 			if (validationError) {
 				ctx.ui.notify(validationError, "error");
 				return;
 			}
 
 			state.originalModelId = ctx.model?.id ?? null;
+			state.originalModules = currentShownModules;
 			state.active = { id: randomUUID(), config, userPrompt, currentStepIndex: 0 };
 			ctx.ui.notify(`Starting workflow "${config.name}" (${config.steps.length} steps)`, "info");
 			await runCurrentStep(pi, state, ctx);
@@ -124,7 +137,12 @@ export default function workflowExtension(pi: ExtensionAPI) {
 
 	pi.on("before_agent_start", async (event) => {
 		if (!state.active) return;
-		const cleaned = event.systemPrompt.replace(/<available_skills>[\s\S]*?<\/available_skills>/g, "");
+		const step = currentStep(state);
+		if (!step) return;
+
+		// Replace the full <available_skills> block with one derived from the step's effective modules
+		const moduleSkills = buildModuleSkillsBlock(pi, state.active.config, step);
+		const cleaned = event.systemPrompt.replace(/<available_skills>[\s\S]*?<\/available_skills>/g, moduleSkills);
 		return { systemPrompt: cleaned };
 	});
 
@@ -140,6 +158,7 @@ export default function workflowExtension(pi: ExtensionAPI) {
 				const name = state.active!.config.name;
 				state.active = null;
 				updateStatus(state, ctx);
+				await restoreOriginalModules(pi, state);
 				await restoreOriginalModel(pi, state, ctx);
 				ctx.ui.notify(`Workflow "${name}" aborted: condition evaluation failed`, "error");
 				return;
@@ -165,6 +184,7 @@ export default function workflowExtension(pi: ExtensionAPI) {
 		const name = state.active.config.name;
 		state.active = null;
 		updateStatus(state, ctx);
+		await restoreOriginalModules(pi, state);
 		await restoreOriginalModel(pi, state, ctx);
 		ctx.ui.notify(`Workflow "${name}" aborted (session switched)`, "warning");
 	});

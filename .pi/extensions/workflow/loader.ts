@@ -18,6 +18,14 @@ export function listWorkflows(cwd: string): string[] {
 		.map((f) => f.replace(/\.ya?ml$/, ""));
 }
 
+function parseModules(value: unknown, stepNum?: number): string[] | undefined {
+	if (value == null) return undefined;
+	if (Array.isArray(value)) return value as string[];
+	if (typeof value === "string") return [value];
+	const location = stepNum != null ? `Step ${stepNum} 'modules'` : "Workflow 'modules'";
+	throw new Error(`${location} must be a string or string array, got: ${typeof value}`);
+}
+
 export function loadWorkflowFile(name: string, cwd: string): WorkflowConfig {
 	const dir = getWorkflowsDir(cwd);
 	let filePath = join(dir, `${name}.yml`);
@@ -63,12 +71,15 @@ export function loadWorkflowFile(name: string, cwd: string): WorkflowConfig {
 			model: resolvedModel,
 			prompt: s.prompt as string,
 			skills: (s.skills as string[]) ?? [],
+			modules: parseModules(s.modules, idx + 1),
 			approval: s.approval === true,
 			conditions,
 		};
 	});
 
-	return { name: parsed.name as string, steps };
+	const modules = parseModules(parsed.modules);
+
+	return { name: parsed.name as string, modules, steps };
 }
 
 export function resolvePrompt(prompt: string, cwd: string): string {
@@ -82,7 +93,15 @@ export function resolvePrompt(prompt: string, cwd: string): string {
 	return prompt;
 }
 
-export function validate(config: WorkflowConfig, cwd: string, allSkills: Skill[], ctx: ExtensionContext): string | null {
+export function validate(config: WorkflowConfig, cwd: string, allSkills: Skill[], ctx: ExtensionContext, knownModules?: Set<string>): string | null {
+	if (knownModules && config.modules) {
+		for (const mod of config.modules) {
+			if (!knownModules.has(mod)) {
+				return `Workflow-level module "${mod}" not found. Available modules: ${[...knownModules].join(", ") || "(none)"}`;
+			}
+		}
+	}
+
 	const allModels = ctx.modelRegistry.getAll();
 	const registryAny = ctx.modelRegistry as any;
 	for (const step of config.steps) {
@@ -113,6 +132,14 @@ export function validate(config: WorkflowConfig, cwd: string, allSkills: Skill[]
 			for (const skillName of step.skills) {
 				if (!allSkills.some((s) => s.name === skillName)) {
 					return `Skill "${skillName}" not found`;
+				}
+			}
+		}
+
+		if (knownModules && step.modules) {
+			for (const mod of step.modules) {
+				if (!knownModules.has(mod)) {
+					return `Step "${step.name}": module "${mod}" not found. Available modules: ${[...knownModules].join(", ") || "(none)"}`;
 				}
 			}
 		}

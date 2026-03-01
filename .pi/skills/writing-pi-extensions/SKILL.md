@@ -44,7 +44,7 @@ Auto-discovered extensions support `/reload` for hot-reloading.
 
 ## Registering Tools Under a Module
 
-This project has a module system (`.pi/extensions/modules/`) that groups tools and skills into named modules that can be loaded/unloaded via `/module load <name>` and `/module unload <name>`. When a module is unloaded, its tools are deactivated and its skills are filtered from the system prompt.
+This project has a module system (`.pi/extensions/modules/`) that groups tools and skills into named modules that can be shown/hidden via `/module show <name>` and `/module hide <name>`. When a module is hidden, its tools are deactivated and its skills are filtered from the system prompt.
 
 ### Tagging a tool to a module
 
@@ -87,7 +87,7 @@ module: my-module
 ---
 ```
 
-When the module is unloaded, the skill's `<skill>` block is stripped from the system prompt.
+When the module is hidden, the skill's `<skill>` block is stripped from the system prompt.
 
 ## Other API Methods
 

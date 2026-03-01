@@ -315,14 +315,14 @@ When: Reference material too large for inline
 
 ## Modules
 
-**Modules** group related skills and tools so they can be loaded/unloaded as a unit. This saves context by keeping irrelevant skills out of the system prompt until needed.
+**Modules** group related skills and tools so they can be shown/hidden as a unit. This saves context by keeping irrelevant skills out of the system prompt until needed.
 
 ### How It Works
 
 1. Add `module: <name>` to a skill's YAML frontmatter
 2. Skills with the same module name are grouped together
 3. The `/module` command controls which modules are active
-4. **Unloaded** module skills are filtered from the system prompt and their tools are deactivated
+4. **Hidden** module skills are filtered from the system prompt and their tools are deactivated
 5. **Skills without a module** are always visible — modules are opt-in
 6. Module state persists across sessions
 
@@ -357,7 +357,7 @@ pi.registerTool(moduleTag(pi, "design", {
 }));
 ```
 
-Tagged tools are deactivated when their module is unloaded.
+Tagged tools are deactivated when their module is hidden.
 
 ### Module Commands
 
@@ -365,9 +365,9 @@ Tagged tools are deactivated when their module is unloaded.
 |---------|-------------|
 | `/module list` | Show all discovered modules |
 | `/module list <name>` | Show skills and tools in a module |
-| `/module load <name>` | Activate a module |
-| `/module unload <name>` | Deactivate a module |
-| `/module status` | Show currently loaded modules |
+| `/module show <name>` | Activate a module |
+| `/module hide <name>` | Deactivate a module |
+| `/module status` | Show currently shown modules |
 
 ### Naming Conventions
 
