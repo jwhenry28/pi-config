@@ -1,7 +1,7 @@
 ---
 name: querying-realtor-dot-com
 description: Use when querying realtor.com for property data, searching sold or for-sale listings, building real estate comparables, or pulling housing market data - provides the GraphQL API endpoint, required headers, query structure, filters, and response parsing
-module: none
+module: real-estate
 ---
 
 # Querying Realtor.com's GraphQL API
