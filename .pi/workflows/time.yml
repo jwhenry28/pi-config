@@ -3,6 +3,7 @@ modules: development
 steps:
   - name: Get Current Time
     model: fast
+    modules: [development, agent-todo]
     prompt: |
       Run the `date` command to get the current time, then write the output to time.txt.
 
