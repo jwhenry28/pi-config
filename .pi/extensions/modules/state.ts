@@ -4,7 +4,7 @@ import type { ModuleContents } from "./registry.js";
 // --- Types ---
 
 export interface ModuleState {
-  loaded: string[];
+  shown: string[];
   granular: Record<string, unknown>; // Reserved for future per-item loading
 }
 
@@ -17,15 +17,21 @@ const MEMORY_KEY = "pi-modules";
 
 /**
  * Load the current module state from memory.
- * Returns default state (nothing loaded) if no state exists.
+ * Returns default state (nothing shown) if no state exists.
+ * Handles migration from old "loaded" format to new "shown" format.
  */
 export function loadState(cwd: string): ModuleState {
   const raw = readKey(cwd, MEMORY_DOMAIN, MEMORY_KEY);
-  if (!raw) return { loaded: [], granular: {} };
+  if (!raw) return { shown: [], granular: {} };
   try {
-    return JSON.parse(raw) as ModuleState;
+    const parsed = JSON.parse(raw) as any;
+    // Migrate old "loaded" format to new "shown" format
+    if (parsed.loaded !== undefined && parsed.shown === undefined) {
+      return { shown: parsed.loaded, granular: parsed.granular ?? {} };
+    }
+    return parsed as ModuleState;
   } catch {
-    return { loaded: [], granular: {} };
+    return { shown: [], granular: {} };
   }
 }
 
@@ -41,18 +47,19 @@ export function saveState(cwd: string, state: ModuleState): void {
  *
  * Rules:
  * - Tools NOT assigned to any module are always included.
- * - Tools assigned to a loaded module are included.
- * - Tools assigned to an unloaded module are excluded.
+ * - Tools assigned to a shown module are included.
+ * - Tools assigned to a hidden module are excluded.
  */
 export function computeActiveTools(
   allToolNames: string[],
   modules: Map<string, ModuleContents>,
   state: ModuleState,
 ): string[] {
-  // Build a set of tool names belonging to unloaded modules
+  // Build a set of tool names belonging to hidden modules
   const excludedTools = new Set<string>();
+  const shownModules = state.shown ?? [];
   for (const [moduleName, contents] of modules) {
-    if (state.loaded.includes(moduleName)) continue;
+    if (shownModules.includes(moduleName)) continue;
     for (const toolName of contents.tools) {
       excludedTools.add(toolName);
     }
@@ -66,8 +73,8 @@ export function computeActiveTools(
  *
  * Rules:
  * - Skills NOT assigned to any module are always included.
- * - Skills assigned to a loaded module are included.
- * - Skills assigned to an unloaded module are excluded.
+ * - Skills assigned to a shown module are included.
+ * - Skills assigned to a hidden module are excluded.
  *
  * Returns the set of skill names that should be excluded.
  */
@@ -76,8 +83,9 @@ export function computeExcludedSkillNames(
   state: ModuleState,
 ): Set<string> {
   const excluded = new Set<string>();
+  const shownModules = state.shown ?? [];
   for (const [moduleName, contents] of modules) {
-    if (state.loaded.includes(moduleName)) continue;
+    if (shownModules.includes(moduleName)) continue;
     for (const skill of contents.skills) {
       excluded.add(skill.name);
     }

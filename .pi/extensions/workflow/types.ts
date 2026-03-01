@@ -12,12 +12,14 @@ export interface WorkflowStep {
 	model: string;
 	prompt: string;
 	skills?: string[];
+	modules?: string[];
 	approval?: boolean;
 	conditions?: StepCondition[];
 }
 
 export interface WorkflowConfig {
 	name: string;
+	modules?: string[];
 	steps: WorkflowStep[];
 }
 
@@ -35,4 +37,5 @@ export interface WorkflowState {
 	advancing: boolean;
 	savedCommandCtx: ExtensionCommandContext | null;
 	originalModelId: string | null;
+	originalModules: string[] | null;
 }

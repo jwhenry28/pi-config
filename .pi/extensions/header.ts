@@ -4,9 +4,9 @@
  * Adds a [Modules] section to the startup info, displayed after
  * the built-in [Skills] and [Extensions] sections.
  *
- * Each module shows its load status:
- *   * module-name   (green, loaded)
- *   - module-name   (dim, not loaded)
+ * Each module shows its visibility status:
+ *   * module-name   (green, shown)
+ *   - module-name   (dim, hidden)
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -16,14 +16,14 @@ import type { ModuleContents } from "./modules/registry.js";
 export default function (pi: ExtensionAPI) {
   pi.registerMessageRenderer("startup-modules", (message, _options, theme) => {
     const details = message.details as {
-      modules: Array<{ name: string; loaded: boolean }>;
+      modules: Array<{ name: string; shown: boolean }>;
     };
 
     if (!details?.modules?.length) return undefined;
 
     const header = theme.fg("mdHeading", "[Modules]");
-    const lines = details.modules.map(({ name, loaded }) => {
-      if (loaded) {
+    const lines = details.modules.map(({ name, shown }) => {
+      if (shown) {
         return `    ${theme.fg("success", "*")} ${theme.fg("dim", name)}`;
       }
       return `    ${theme.fg("dim", `- ${name}`)}`;
@@ -33,12 +33,12 @@ export default function (pi: ExtensionAPI) {
   });
 
   function emitModulesHeader() {
-    let loaded: string[] = [];
+    let shown: string[] = [];
     let modules: Map<string, ModuleContents> = new Map();
 
     pi.events.emit("module:get-state", {
-      callback: (info: { loaded: string[]; modules: Map<string, ModuleContents> }) => {
-        loaded = info.loaded;
+      callback: (info: { shown: string[]; modules: Map<string, ModuleContents> }) => {
+        shown = info.shown;
         modules = info.modules;
       },
     });
@@ -48,7 +48,7 @@ export default function (pi: ExtensionAPI) {
 
     const moduleList = names.map((name) => ({
       name,
-      loaded: loaded.includes(name),
+      shown: shown.includes(name),
     }));
 
     pi.sendMessage({

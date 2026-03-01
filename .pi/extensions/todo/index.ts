@@ -5,6 +5,7 @@ import { handleAdd } from "./add.js";
 import { handleList } from "./list.js";
 import { handleDesign, type Skills } from "./design.js";
 import { handleRemove } from "./remove.js";
+import { registerTodoTool } from "./tool.js";
 
 const SUBCOMMANDS: AutocompleteItem[] = [
   { value: "add", label: "add — Add a new todo item" },
@@ -15,6 +16,8 @@ const SUBCOMMANDS: AutocompleteItem[] = [
 ];
 
 export default function todoExtension(pi: ExtensionAPI) {
+  registerTodoTool(pi);
+
   let allSkills: Skills = [];
 
   pi.on("session_start", async (_event, ctx) => {

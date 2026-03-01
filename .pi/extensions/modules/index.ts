@@ -11,7 +11,7 @@ export default function modulesExtension(pi: ExtensionAPI) {
   let cwd = "";
   let allSkills: Skill[] = [];
   let modules: Map<string, ModuleContents> = new Map();
-  let state: ModuleState = { loaded: [], granular: {} };
+  let state: ModuleState = { shown: [], granular: {} };
   let initialized = false;
 
   /**
@@ -70,33 +70,35 @@ export default function modulesExtension(pi: ExtensionAPI) {
   }
 
   /**
-   * Load a module by name. Returns false if the module doesn't exist or is already loaded.
+   * Show a module by name. Returns false if the module doesn't exist or is already shown.
    */
-  function loadModule(name: string): boolean {
+  function showModule(name: string): boolean {
     if (!modules.has(name)) return false;
-    if (state.loaded.includes(name)) return false;
-    state.loaded.push(name);
+    if (!state.shown) state.shown = [];
+    if (state.shown.includes(name)) return false;
+    state.shown.push(name);
     commitState();
     return true;
   }
 
   /**
-   * Unload a module by name. Returns false if the module doesn't exist or isn't loaded.
+   * Hide a module by name. Returns false if the module doesn't exist or isn't shown.
    */
-  function unloadModule(name: string): boolean {
+  function hideModule(name: string): boolean {
     if (!modules.has(name)) return false;
-    const idx = state.loaded.indexOf(name);
+    if (!state.shown) state.shown = [];
+    const idx = state.shown.indexOf(name);
     if (idx === -1) return false;
-    state.loaded.splice(idx, 1);
+    state.shown.splice(idx, 1);
     commitState();
     return true;
   }
 
   /**
-   * Set the exact list of loaded modules. Invalid names are silently ignored.
+   * Set the exact list of shown modules. Invalid names are silently ignored.
    */
   function setModules(names: string[]): void {
-    state.loaded = names.filter(name => modules.has(name));
+    state.shown = names.filter(name => modules.has(name));
     commitState();
   }
 
@@ -144,12 +146,12 @@ export default function modulesExtension(pi: ExtensionAPI) {
   // --- Slash command ---
 
   pi.registerCommand("module", {
-    description: "Manage modules: load, unload, list, status",
+    description: "Manage modules: show, hide, list, status",
     getArgumentCompletions: (prefix) => {
       const parts = prefix.split(/\s+/);
 
       if (parts.length <= 1) {
-        const subcommands = ["load", "unload", "list", "status", "help"];
+        const subcommands = ["show", "hide", "list", "status", "help"];
         const filtered = subcommands.filter(s => s.startsWith(parts[0] || ""));
         return filtered.length > 0 ? filtered.map(s => ({ value: s, label: s })) : null;
       }
@@ -157,7 +159,7 @@ export default function modulesExtension(pi: ExtensionAPI) {
       const subcommand = parts[0];
       const modulePrefix = parts[1] || "";
 
-      const needsModuleCompletion = subcommand === "load" || subcommand === "unload" || subcommand === "list";
+      const needsModuleCompletion = subcommand === "show" || subcommand === "hide" || subcommand === "list";
       if (!needsModuleCompletion) return null;
 
       const moduleNames = Array.from(modules.keys());
@@ -173,11 +175,11 @@ export default function modulesExtension(pi: ExtensionAPI) {
           [
             "Usage: /module <subcommand> [args...]",
             "",
-            "  load <name>      Load a module (activate its skills and tools)",
-            "  unload <name>    Unload a module (deactivate its skills and tools)",
+            "  show <name>      Show a module (activate its skills and tools)",
+            "  hide <name>      Hide a module (deactivate its skills and tools)",
             "  list             Show all discovered modules",
             "  list <name>      Show skills and tools in a specific module",
-            "  status           Show currently loaded modules",
+            "  status           Show currently shown modules",
             "  help             Show this help message",
           ].join("\n"),
           "info",
@@ -188,41 +190,41 @@ export default function modulesExtension(pi: ExtensionAPI) {
       ensureInitialized();
 
       switch (subcommand) {
-        case "load": {
+        case "show": {
           const moduleName = parts[1];
           if (!moduleName) {
-            ctx.ui.notify("Usage: /module load <name>", "warning");
+            ctx.ui.notify("Usage: /module show <name>", "warning");
             return;
           }
           if (!modules.has(moduleName)) {
             ctx.ui.notify(`Module "${moduleName}" not found`, "error");
             return;
           }
-          if (!loadModule(moduleName)) {
-            ctx.ui.notify(`Module "${moduleName}" is already loaded`, "warning");
+          if (!showModule(moduleName)) {
+            ctx.ui.notify(`Module "${moduleName}" is already shown`, "warning");
             return;
           }
           const contents = modules.get(moduleName)!;
-          ctx.ui.notify(`✓ Loaded module "${moduleName}" (${contents.skills.length} skill(s), ${contents.tools.length} tool(s))`, "info");
+          ctx.ui.notify(`✓ Shown module "${moduleName}" (${contents.skills.length} skill(s), ${contents.tools.length} tool(s))`, "info");
           break;
         }
 
-        case "unload": {
+        case "hide": {
           const moduleName = parts[1];
           if (!moduleName) {
-            ctx.ui.notify("Usage: /module unload <name>", "warning");
+            ctx.ui.notify("Usage: /module hide <name>", "warning");
             return;
           }
           if (!modules.has(moduleName)) {
             ctx.ui.notify(`Module "${moduleName}" not found`, "error");
             return;
           }
-          if (!unloadModule(moduleName)) {
-            ctx.ui.notify(`Module "${moduleName}" is not loaded`, "warning");
+          if (!hideModule(moduleName)) {
+            ctx.ui.notify(`Module "${moduleName}" is not shown`, "warning");
             return;
           }
           const contents = modules.get(moduleName)!;
-          ctx.ui.notify(`✓ Unloaded module "${moduleName}" (${contents.skills.length} skill(s), ${contents.tools.length} tool(s))`, "info");
+          ctx.ui.notify(`✓ Hidden module "${moduleName}" (${contents.skills.length} skill(s), ${contents.tools.length} tool(s))`, "info");
           break;
         }
 
@@ -259,9 +261,10 @@ export default function modulesExtension(pi: ExtensionAPI) {
               return;
             }
             const lines = ["Available modules:"];
+            const shownModules = state.shown ?? [];
             for (const name of names) {
-              const isLoaded = state.loaded.includes(name);
-              lines.push(`  ${name}${isLoaded ? " (loaded)" : ""}`);
+              const isShown = shownModules.includes(name);
+              lines.push(`  ${name}${isShown ? " (shown)" : ""}`);
             }
             ctx.ui.notify(lines.join("\n"), "info");
           }
@@ -269,12 +272,13 @@ export default function modulesExtension(pi: ExtensionAPI) {
         }
 
         case "status": {
-          if (state.loaded.length === 0) {
-            ctx.ui.notify("No modules loaded", "info");
+          const shownModules = state.shown ?? [];
+          if (shownModules.length === 0) {
+            ctx.ui.notify("No modules shown", "info");
             return;
           }
-          const lines = ["Loaded modules:"];
-          for (const name of state.loaded) {
+          const lines = ["Shown modules:"];
+          for (const name of shownModules) {
             lines.push(`  ${name}`);
           }
           ctx.ui.notify(lines.join("\n"), "info");
@@ -282,21 +286,21 @@ export default function modulesExtension(pi: ExtensionAPI) {
         }
 
         default:
-          ctx.ui.notify(`Unknown subcommand: ${subcommand}. Use load, unload, list, status, or help.`, "warning");
+          ctx.ui.notify(`Unknown subcommand: ${subcommand}. Use show, hide, list, status, or help.`, "warning");
       }
     },
   });
 
   // --- Programmatic event API ---
 
-  pi.events.on("module:load", (data: { name: string }) => {
+  pi.events.on("module:show", (data: { name: string }) => {
     ensureInitialized();
-    loadModule(data.name);
+    showModule(data.name);
   });
 
-  pi.events.on("module:unload", (data: { name: string }) => {
+  pi.events.on("module:hide", (data: { name: string }) => {
     ensureInitialized();
-    unloadModule(data.name);
+    hideModule(data.name);
   });
 
   pi.events.on("module:set", (data: { names: string[] }) => {
@@ -304,9 +308,10 @@ export default function modulesExtension(pi: ExtensionAPI) {
     setModules(data.names);
   });
 
-  pi.events.on("module:get-state", (data: { callback: (info: { loaded: string[]; modules: Map<string, ModuleContents> }) => void }) => {
+  pi.events.on("module:get-state", (data: { callback: (info: { shown: string[]; modules: Map<string, ModuleContents> }) => void }) => {
     ensureInitialized();
-    data.callback({ loaded: [...state.loaded], modules });
+    const shownModules = state.shown ?? [];
+    data.callback({ shown: [...shownModules], modules });
   });
 }
 
