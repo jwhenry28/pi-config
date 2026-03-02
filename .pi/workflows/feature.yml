@@ -1,7 +1,7 @@
 name: Feature Implementation
 steps:
   - name: Brainstorm
-    model: claude-opus-4-6
+    model: smart
     prompt: |
       Brainstorm with the user to flesh out all the details of their feature.
       After finishing brainstorming, store the location of your design document
@@ -12,7 +12,7 @@ steps:
     approval: true
 
   - name: Plan
-    model: claude-opus-4-6
+    model: smart
     prompt: |
       In the previous step, we made a design specification document for the
       requested feature. You can find the location of that document in the
@@ -27,7 +27,7 @@ steps:
       - writing-plans
 
   - name: Implement
-    model: claude-opus-4-6
+    model: smart
     prompt: |
       In the previous step, we made a detailed, step-by-step plan to implement
       the requested feature. You can find the location of that plan in the
