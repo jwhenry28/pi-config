@@ -10,9 +10,11 @@ import {
 	AuthStorage,
 	type ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
-import type { StepCondition } from "./types.js";
+import type { PromptCondition, CommandCondition } from "./types.js";
 import { resolvePrompt } from "./loader.js";
 import { resolveModelAlias, parseModelRef } from "./models.js";
+import { getConditionCommand } from "./commands/registry.js";
+import type { CommandContext } from "./commands/registry.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const conditionTemplate = readFileSync(join(__dirname, "condition-prompt.md"), "utf-8");
@@ -52,7 +54,7 @@ function getLastAssistantText(messages: Array<{ role: string; content: unknown }
 }
 
 export async function evaluateCondition(
-	condition: StepCondition,
+	condition: PromptCondition,
 	cwd: string,
 	ctx: ExtensionContext,
 ): Promise<ConditionResult | null> {
@@ -118,5 +120,27 @@ export async function evaluateCondition(
 		return null;
 	} finally {
 		session.dispose();
+	}
+}
+
+export async function evaluateCommandCondition(
+	condition: CommandCondition,
+	cwd: string,
+	workflowId: string,
+	ctx: ExtensionContext,
+): Promise<ConditionResult | null> {
+	const fn = getConditionCommand(condition.command);
+	if (!fn) {
+		ctx.ui.notify(`Command "${condition.command}" not found in registry`, "error");
+		return null;
+	}
+
+	try {
+		const commandCtx: CommandContext = { cwd, workflowId };
+		const result = await fn(commandCtx, condition.args);
+		return result;
+	} catch (e) {
+		ctx.ui.notify(`Command "${condition.command}" failed: ${(e as Error).message}`, "warning");
+		return null;
 	}
 }

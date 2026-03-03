@@ -3,9 +3,11 @@ import { join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { Skill } from "@mariozechner/pi-coding-agent";
-import type { WorkflowConfig, WorkflowStep } from "./types.js";
+import type { WorkflowConfig, WorkflowStep, PromptStep, CommandStep, PromptCondition, CommandCondition } from "./types.js";
+import { isPromptStep, isCommandStep, isPromptCondition, isCommandCondition } from "./types.js";
 import { resolveModelAlias, parseModelRef } from "./models.js";
 import { listYamlBasenames } from "../shared/yaml-files.js";
+import { getConditionCommand, getStepCommand } from "./commands/registry.js";
 
 export function getWorkflowsDir(cwd: string): string {
 	return join(cwd, ".pi", "workflows");
@@ -45,25 +47,67 @@ export function loadWorkflowFile(name: string, cwd: string): WorkflowConfig {
 
 	const steps: WorkflowStep[] = (parsed.steps as Record<string, unknown>[]).map((s, idx) => {
 		if (!s.name) throw new Error(`Step ${idx + 1} missing 'name'`);
-		if (!s.model) throw new Error(`Step ${idx + 1} missing 'model'`);
-		if (!s.prompt) throw new Error(`Step ${idx + 1} missing 'prompt'`);
-		
-		// Resolve model alias to actual model ID
-		const resolvedModel = resolveModelAlias(s.model as string, cwd);
-		
+
+		const hasCommand = "command" in s && s.command != null;
+		const hasPrompt = "prompt" in s && s.prompt != null;
+
+		if (hasCommand && hasPrompt) {
+			throw new Error(`Step ${idx + 1} "${s.name}": 'command' and 'prompt' are mutually exclusive`);
+		}
+		if (!hasCommand && !hasPrompt) {
+			throw new Error(`Step ${idx + 1} "${s.name}": must have either 'command' or 'prompt'`);
+		}
+
+		// Parse conditions (shared by both step types)
 		const conditions = s.conditions
 			? (s.conditions as Record<string, unknown>[]).map((c, ci) => {
-				if (!c.prompt) throw new Error(`Step ${idx + 1}, condition ${ci + 1} missing 'prompt'`);
-				if (!c.model) throw new Error(`Step ${idx + 1}, condition ${ci + 1} missing 'model'`);
+				const condHasCommand = "command" in c && c.command != null;
+				const condHasPrompt = "prompt" in c && c.prompt != null;
+
+				if (condHasCommand && condHasPrompt) {
+					throw new Error(`Step ${idx + 1}, condition ${ci + 1}: 'command' and 'prompt' are mutually exclusive`);
+				}
+				if (!condHasCommand && !condHasPrompt) {
+					throw new Error(`Step ${idx + 1}, condition ${ci + 1}: must have either 'command' or 'prompt'`);
+				}
 				if (!c.jump) throw new Error(`Step ${idx + 1}, condition ${ci + 1} missing 'jump'`);
+
+				if (condHasCommand) {
+					if (c.model) throw new Error(`Step ${idx + 1}, condition ${ci + 1}: 'model' is not allowed with 'command'`);
+					return {
+						command: c.command as string,
+						args: (c.args as Record<string, string>) ?? undefined,
+						jump: c.jump as string,
+					} satisfies CommandCondition;
+				}
+
+				if (!c.model) throw new Error(`Step ${idx + 1}, condition ${ci + 1} missing 'model'`);
 				return {
 					prompt: c.prompt as string,
 					model: resolveModelAlias(c.model as string, cwd),
 					jump: c.jump as string,
-				};
+				} satisfies PromptCondition;
 			})
 			: undefined;
 
+		if (hasCommand) {
+			// Validate no prompt-only fields
+			for (const forbidden of ["model", "prompt", "skills", "modules", "approval"]) {
+				if ((s as Record<string, unknown>)[forbidden] != null) {
+					throw new Error(`Step ${idx + 1} "${s.name}": '${forbidden}' is not allowed with 'command'`);
+				}
+			}
+			return {
+				name: s.name as string,
+				command: s.command as string,
+				args: (s.args as Record<string, string>) ?? undefined,
+				conditions,
+			} satisfies CommandStep;
+		}
+
+		// Prompt step
+		if (!s.model) throw new Error(`Step ${idx + 1} missing 'model'`);
+		const resolvedModel = resolveModelAlias(s.model as string, cwd);
 		return {
 			name: s.name as string,
 			model: resolvedModel,
@@ -72,7 +116,7 @@ export function loadWorkflowFile(name: string, cwd: string): WorkflowConfig {
 			modules: parseModules(s.modules, idx + 1),
 			approval: s.approval === true,
 			conditions,
-		};
+		} satisfies PromptStep;
 	});
 
 	const modules = parseModules(parsed.modules);
@@ -102,68 +146,79 @@ export function validate(config: WorkflowConfig, cwd: string, allSkills: Skill[]
 
 	const allModels = ctx.modelRegistry.getAll();
 	const registryAny = ctx.modelRegistry as any;
+
 	for (const step of config.steps) {
-		// Resolve model alias before validation
-		const resolvedModelRef = resolveModelAlias(step.model, cwd);
-		const { provider: specifiedProvider, modelId } = parseModelRef(resolvedModelRef);
-		
-		let inRegistry: boolean;
-		if (specifiedProvider && registryAny.find) {
-			// Provider explicitly specified, use registry.find()
-			inRegistry = !!registryAny.find(specifiedProvider, modelId);
-		} else {
-			// No provider specified, look up by model ID only
-			inRegistry = allModels.some((m) => m.id === modelId);
-		}
-		if (!inRegistry) {
-			return `Model "${step.model}" (resolved to "${resolvedModelRef}") not found in registry`;
-		}
+		if (isPromptStep(step)) {
+			const resolvedModelRef = resolveModelAlias(step.model, cwd);
+			const { provider: specifiedProvider, modelId } = parseModelRef(resolvedModelRef);
 
-		if (step.prompt.startsWith("@")) {
-			const filePath = resolve(cwd, step.prompt.slice(1));
-			if (!existsSync(filePath)) {
-				return `Prompt file not found: ${step.prompt.slice(1)}`;
+			let inRegistry: boolean;
+			if (specifiedProvider && registryAny.find) {
+				inRegistry = !!registryAny.find(specifiedProvider, modelId);
+			} else {
+				inRegistry = allModels.some((m) => m.id === modelId);
 			}
-		}
+			if (!inRegistry) {
+				return `Model "${step.model}" (resolved to "${resolvedModelRef}") not found in registry`;
+			}
 
-		if (step.skills) {
-			for (const skillName of step.skills) {
-				if (!allSkills.some((s) => s.name === skillName)) {
-					return `Skill "${skillName}" not found`;
+			if (step.prompt.startsWith("@")) {
+				const filePath = resolve(cwd, step.prompt.slice(1));
+				if (!existsSync(filePath)) {
+					return `Prompt file not found: ${step.prompt.slice(1)}`;
 				}
 			}
-		}
 
-		if (knownModules && step.modules) {
-			for (const mod of step.modules) {
-				if (!knownModules.has(mod)) {
-					return `Step "${step.name}": module "${mod}" not found. Available modules: ${[...knownModules].join(", ") || "(none)"}`;
+			if (step.skills) {
+				for (const skillName of step.skills) {
+					if (!allSkills.some((s) => s.name === skillName)) {
+						return `Skill "${skillName}" not found`;
+					}
 				}
+			}
+
+			if (knownModules && step.modules) {
+				for (const mod of step.modules) {
+					if (!knownModules.has(mod)) {
+						return `Step "${step.name}": module "${mod}" not found. Available modules: ${[...knownModules].join(", ") || "(none)"}`;
+					}
+				}
+			}
+		} else if (isCommandStep(step)) {
+			if (!getStepCommand(step.command) && !getConditionCommand(step.command)) {
+				return `Step "${step.name}": command "${step.command}" not found in registry`;
 			}
 		}
 
+		// Condition validation (both step types can have conditions)
 		if (step.conditions) {
 			for (const cond of step.conditions) {
-				// Resolve model alias before validation
-				const resolvedCondRef = resolveModelAlias(cond.model, cwd);
-				const { provider: condProvider, modelId: condModelId } = parseModelRef(resolvedCondRef);
-				
-				let condInRegistry: boolean;
-				if (condProvider && registryAny.find) {
-					condInRegistry = !!registryAny.find(condProvider, condModelId);
-				} else {
-					condInRegistry = allModels.some((m) => m.id === condModelId);
-				}
-				if (!condInRegistry) {
-					return `Step "${step.name}", condition model "${cond.model}" (resolved to "${resolvedCondRef}") not found in registry`;
-				}
 				if (!config.steps.find((s) => s.name === cond.jump)) {
 					return `Step "${step.name}", condition jump target "${cond.jump}" not found`;
 				}
-				if (cond.prompt.startsWith("@")) {
-					const filePath = resolve(cwd, cond.prompt.slice(1));
-					if (!existsSync(filePath)) {
-						return `Condition prompt file not found: ${cond.prompt.slice(1)}`;
+
+				if (isPromptCondition(cond)) {
+					const resolvedCondRef = resolveModelAlias(cond.model, cwd);
+					const { provider: condProvider, modelId: condModelId } = parseModelRef(resolvedCondRef);
+
+					let condInRegistry: boolean;
+					if (condProvider && registryAny.find) {
+						condInRegistry = !!registryAny.find(condProvider, condModelId);
+					} else {
+						condInRegistry = allModels.some((m) => m.id === condModelId);
+					}
+					if (!condInRegistry) {
+						return `Step "${step.name}", condition model "${cond.model}" (resolved to "${resolvedCondRef}") not found in registry`;
+					}
+					if (cond.prompt.startsWith("@")) {
+						const filePath = resolve(cwd, cond.prompt.slice(1));
+						if (!existsSync(filePath)) {
+							return `Condition prompt file not found: ${cond.prompt.slice(1)}`;
+						}
+					}
+				} else if (isCommandCondition(cond)) {
+					if (!getConditionCommand(cond.command)) {
+						return `Step "${step.name}", condition command "${cond.command}" not found in registry`;
 					}
 				}
 			}

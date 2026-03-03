@@ -1,7 +1,6 @@
 ---
 name: writing-workflows
-description: Writing workflow YAML files for the /workflow extension - covers schema, step configuration, prompt references, and execution model
-module: pi-development
+description: Writing workflow YAML files for the /workflow extension - covers schema, step configuration, prompt references, conditions, commands, and execution model
 ---
 
 # Writing Workflows
@@ -20,78 +19,135 @@ Workflows are YAML files in `.pi/workflows/` that define a sequence of steps exe
 
 ```yaml
 name: My Workflow
+modules:
+  - development
 steps:
-  - name: Step 1
-    model: claude-opus-4-6
+  - name: Plan
+    model: smart
     prompt: |
       Analyze the codebase and create a detailed plan.
     skills:
       - brainstorming
+    modules:
+      - testing
     approval: true
 
-  - name: Step 2
-    model: claude-sonnet-4-5
+  - name: Implement
+    model: general
     prompt: @prompts/implement.md
+    skills:
+      - executing-plans
+    conditions:
+      - command: check-todos-complete
+        args:
+          memoryKey: plan-todo
+        jump: Implement
+
+  - name: Quick Check
+    command: check-todos-complete
+    args:
+      memoryKey: plan-todo
 ```
 
-## Step Properties
+## Step Types
+
+There are two mutually exclusive step types: **prompt steps** (LLM-driven) and **command steps** (deterministic code).
+
+### Prompt Steps
 
 | Field | Required | Default | Description |
 | --- | --- | --- | --- |
 | `name` | Yes | — | Display name shown in the TUI status bar |
-| `model` | Yes | — | Model ID or alias (see below) |
+| `model` | Yes | — | Model ID or alias (`smart`, `general`, `fast`) |
 | `prompt` | Yes | — | Inline text or `@path` to a markdown file |
-| `skills` | No | `[]` | Skill names to load (empty = no skills) |
-| `approval` | No | `false` | Require `/workflow approve` before advancing |
+| `skills` | No | `[]` | Skill names to inject into the step |
+| `modules` | No | — | Module names to activate (merged with workflow-level) |
+| `approval` | No | `false` | Require `/workflow continue` before advancing |
+| `conditions` | No | — | Post-step conditions to evaluate (see below) |
+
+### Command Steps
+
+Run a registered TypeScript function directly — no LLM involved.
+
+| Field | Required | Default | Description |
+| --- | --- | --- | --- |
+| `name` | Yes | — | Display name |
+| `command` | Yes | — | Registered command name |
+| `args` | No | — | Key-value string arguments passed to the command |
+| `conditions` | No | — | Post-step conditions to evaluate |
+
+Command steps cannot have `model`, `prompt`, `skills`, `modules`, or `approval`.
 
 ## Model Aliases
 
-Instead of hardcoding specific model IDs, you can use general aliases that map to different models:
+Instead of hardcoding model IDs, use aliases that resolve via the `workflow_models` memory domain:
 
-| Alias | Default Model | Use Case |
-| --- | --- | --- |
-| `smart` | `claude-opus-4-6` | Complex reasoning, planning, architecture |
-| `general` | `claude-sonnet-4-6` | Balanced performance and cost |
-| `fast` | `claude-haiku-4-5` | Quick tasks, simple queries |
+| Alias | Default |
+| --- | --- |
+| `smart` | `claude-opus-4-6` |
+| `general` | `claude-sonnet-4-6` |
+| `fast` | `claude-haiku-4-5` |
 
-### Customizing Aliases
-
-Users can override these mappings using the memory store:
+Override an alias by writing to the `workflow_models` memory domain:
 
 ```
-/memory add workflow_models smart claude-opus-4-7
-/memory add workflow_models general claude-sonnet-4-7
-/memory add workflow_models fast claude-haiku-4-6
+memory_add domain=workflow_models key=smart value=claude-sonnet-4-6
 ```
 
-This allows workflows to be written with stable aliases while easily updating to newer models or switching providers.
+## Modules
 
-### Specifying a Provider
+Modules control which skills appear in the system prompt's `<available_skills>` block.
 
-If you have custom models defined in `~/.pi/agent/models.json` under a specific provider, you can use the `provider/model-id` format to explicitly select which provider to use. This is useful when multiple providers have models with the same ID, or when you want to use a custom provider without clobbering built-in provider definitions.
+- **Workflow-level** `modules`: active for all prompt steps
+- **Step-level** `modules`: merged with workflow-level for that step only
 
-Example:
-
-```
-/memory add workflow_models smart custom/kimi-k2.5
-```
-
-Where `custom` is the provider name in your `models.json`:
-
-```json
-{
-  "providers": {
-    "custom": {
-      "baseUrl": "https://api.moonshot.ai/v1",
-      "api": "openai-completions",
-      "apiKey": "MOONSHOT_API_KEY",
-      "models": [{ "id": "kimi-k2.5" }]
-    }
-  }
-}
+```yaml
+name: My Workflow
+modules:
+  - development        # Active for all steps
+steps:
+  - name: Test
+    model: general
+    prompt: Run all tests.
+    modules:
+      - testing        # Also active for this step
 ```
 
-The workflow extension will use `registry.find("custom", "kimi-k2.5")` to locate the correct model with its associated API key configuration.
+## Conditions
+
+Conditions evaluate after a step completes. If a condition returns `"yes"`, the workflow jumps to the named step. If all return `"no"`, the workflow advances sequentially.
+
+### Prompt Conditions
+
+Use an LLM to evaluate:
+
+```yaml
+conditions:
+  - prompt: |
+      Check whether there are remaining issues.
+    model: fast
+    jump: Fix Issues
+```
+
+### Command Conditions
+
+Use deterministic code — faster and more reliable:
+
+```yaml
+conditions:
+  - command: check-todos-complete
+    args:
+      memoryKey: plan-todo
+    jump: Implement
+```
+
+`prompt` and `command` are mutually exclusive in conditions, same as in steps.
+
+### Available Commands
+
+| Command | Type | Args | Description |
+| --- | --- | --- | --- |
+| `check-todos-complete` | condition | `memoryKey` or `todoFilepath` | Checks a todo file for unchecked `- [ ]` items. `memoryKey` reads the file path from workflow memory; `todoFilepath` uses a path directly. Mutually exclusive. |
 
 ## Prompt Resolution
 
@@ -109,31 +165,32 @@ File references use `@` prefix, resolved relative to the working directory:
 prompt: @docs/prompts/review-checklist.md
 ```
 
-## Message Template
+## Memory Store
 
-Each step sends this as the user message:
+Each workflow run gets a shared memory domain (keyed by workflow ID). Steps can read/write to it using the memory tools, enabling data passing between steps.
+
+The message template tells the agent about the domain:
 
 ```
-You are running one step in the <workflow name> workflow. The top-level goal of this workflow is:
-<user prompt from /workflow command>
-
-You are currently on step <step name>. For this step, you must:
-<resolved step prompt>
+A shared memory store has been created for this workflow under the domain "<id>".
+Use the memory tools (memory_add, memory_get, memory_list) with this domain
+to pass information between steps.
 ```
 
 ## Execution Model
 
-- Steps run strictly in order
-- Each step starts a **new session** (clean context window)
-- The top-level prompt from `/workflow` is included in every step
-- When `approval: false`, the next step starts automatically after the agent finishes
-- When `approval: true`, the user must run `/workflow approve` to continue
+- Each prompt step starts a **new session** (clean context window)
+- Command steps execute inline — no session, no LLM call
+- The user's original prompt is included in every prompt step's message
+- When `approval: false`, the next step starts automatically
+- When `approval: true`, the user must run `/workflow continue`
+- Conditions are evaluated after each step completes (both types)
 
 ## Subcommands
 
 | Command | Purpose |
 | --- | --- |
-| `/workflow approve` | Approve current step and advance |
+| `/workflow continue` | Approve current step and advance |
 | `/workflow status` | Show current step info |
 | `/workflow abort` | Cancel the running workflow |
 
@@ -142,29 +199,34 @@ You are currently on step <step name>. For this step, you must:
 ```yaml
 name: Feature Implementation
 steps:
+  - name: Brainstorm
+    model: smart
+    prompt: |
+      Brainstorm with the user to flesh out all the details.
+      Store the design doc path to memory key "design-doc".
+    skills:
+      - brainstorming
+    approval: true
+
   - name: Plan
     model: smart
     prompt: |
-      Analyze the codebase and create a detailed implementation plan.
-      Read all relevant files in full. Do not make any changes.
-      Write the plan to docs/plans/.
+      Read the design doc from memory key "design-doc".
+      Create a step-by-step implementation plan.
+      Store "plan" and "plan-todo" keys to memory.
     skills:
       - writing-plans
-    approval: true
 
   - name: Implement
-    model: general
-    prompt: |
-      Read the plan in docs/plans/ and implement it step by step.
-      Run tests after each change.
-    skills:
-      - executing-plans
-
-  - name: Review
     model: smart
     prompt: |
-      Review all changes made in this session.
-      Check for correctness, edge cases, and test coverage.
-      Summarize findings.
-    approval: true
+      Read the plan from memory key "plan".
+      Execute the plan.
+    skills:
+      - executing-plans
+    conditions:
+      - command: check-todos-complete
+        args:
+          memoryKey: plan-todo
+        jump: Implement
 ```

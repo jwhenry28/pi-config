@@ -38,11 +38,7 @@ steps:
     skills:
       - executing-plans
     conditions:
-      - prompt: |
-          Use the workflow memory to read the key "plan-todo" from the memory
-          domain (the workflow ID from the "Workflow:" line at the top of this
-          message). That gives you the path to todo.md. Read that file and check
-          whether all tasks are marked as completed ([x]). If any remain
-          unchecked ([ ]), the condition is true — there is still work to do.
-        model: claude-haiku-4-5
+      - command: check-todos-complete
+        args:
+          memoryKey: plan-todo
         jump: Implement
