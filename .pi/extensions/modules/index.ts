@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { loadSkills } from "@mariozechner/pi-coding-agent";
 import type { Skill } from "@mariozechner/pi-coding-agent";
 import { discoverModules, type ModuleContents } from "./registry.js";
+import { formatModulesBlock } from "./display.js";
 import { loadState, saveState, computeActiveTools, computeExcludedSkillNames, type ModuleState } from "./state.js";
 import type { ModuleToolTagEvent } from "./api.js";
 
@@ -146,12 +147,12 @@ export default function modulesExtension(pi: ExtensionAPI) {
   // --- Slash command ---
 
   pi.registerCommand("module", {
-    description: "Manage modules: show, hide, list, status",
+    description: "Manage modules: show, hide, list",
     getArgumentCompletions: (prefix) => {
       const parts = prefix.split(/\s+/);
 
       if (parts.length <= 1) {
-        const subcommands = ["show", "hide", "list", "status", "help"];
+        const subcommands = ["show", "hide", "list", "help"];
         const filtered = subcommands.filter(s => s.startsWith(parts[0] || ""));
         return filtered.length > 0 ? filtered.map(s => ({ value: s, label: s })) : null;
       }
@@ -177,9 +178,8 @@ export default function modulesExtension(pi: ExtensionAPI) {
             "",
             "  show <name>      Show a module (activate its skills and tools)",
             "  hide <name>      Hide a module (deactivate its skills and tools)",
-            "  list             Show all discovered modules",
+            "  list             Show all discovered modules (and which are shown)",
             "  list <name>      Show skills and tools in a specific module",
-            "  status           Show currently shown modules",
             "  help             Show this help message",
           ].join("\n"),
           "info",
@@ -260,33 +260,22 @@ export default function modulesExtension(pi: ExtensionAPI) {
               ctx.ui.notify("No modules found. Tag skills with `module: <name>` in their SKILL.md frontmatter.", "info");
               return;
             }
-            const lines = ["Available modules:"];
             const shownModules = state.shown ?? [];
-            for (const name of names) {
-              const isShown = shownModules.includes(name);
-              lines.push(`  ${name}${isShown ? " (shown)" : ""}`);
-            }
-            ctx.ui.notify(lines.join("\n"), "info");
+            const text = formatModulesBlock(
+              names.map((name) => ({ name, shown: shownModules.includes(name) })),
+              {
+                formatHeader: (text) => ctx.ui.theme.fg("mdHeading", text),
+                formatShownLine: (name) => `${ctx.ui.theme.fg("success", "*")} ${ctx.ui.theme.fg("dim", name)}`,
+                formatHiddenLine: (name) => ctx.ui.theme.fg("dim", `- ${name}`),
+              },
+            );
+            ctx.ui.notify(text, "info");
           }
-          break;
-        }
-
-        case "status": {
-          const shownModules = state.shown ?? [];
-          if (shownModules.length === 0) {
-            ctx.ui.notify("No modules shown", "info");
-            return;
-          }
-          const lines = ["Shown modules:"];
-          for (const name of shownModules) {
-            lines.push(`  ${name}`);
-          }
-          ctx.ui.notify(lines.join("\n"), "info");
           break;
         }
 
         default:
-          ctx.ui.notify(`Unknown subcommand: ${subcommand}. Use show, hide, list, status, or help.`, "warning");
+          ctx.ui.notify(`Unknown subcommand: ${subcommand}. Use show, hide, list, or help.`, "warning");
       }
     },
   });
