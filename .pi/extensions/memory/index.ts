@@ -92,7 +92,7 @@ export default function (pi: ExtensionAPI) {
   // --- Command ---
 
   pi.registerCommand("memory", {
-    description: "Manage memory domains: create, add, get, list, purge, stats",
+    description: "Manage memory domains: create, set, get, list, purge, stats",
     handler: async (args, ctx) => {
       const parts = args.trim().split(/\s+/);
       const subcommand = parts[0];
@@ -103,7 +103,7 @@ export default function (pi: ExtensionAPI) {
             "Usage: /memory <subcommand> [args...]",
             "",
             "  create <domain>              Create a new memory domain",
-            "  add <domain> <key> <value>   Add a key-value pair to a domain",
+            "  set <domain> <key> <value>   Set a key-value pair in a domain",
             "  get <domain> <key>           Retrieve a value by key",
             "  list <domain>                List all keys in a domain",
             "  purge <domain|all>           Delete a domain or all domains (with confirmation)",
@@ -126,11 +126,11 @@ export default function (pi: ExtensionAPI) {
           ctx.ui.notify(createDomain(ctx.cwd, domain), "info");
           break;
         }
-        case "add": {
+        case "set": {
           const domain = parts[1];
           const key = parts[2];
           const value = parts.slice(3).join(" ");
-          if (!domain || !key || !value) { ctx.ui.notify("Usage: /memory add <domain> <key> <value>", "warning"); return; }
+          if (!domain || !key || !value) { ctx.ui.notify("Usage: /memory set <domain> <key> <value>", "warning"); return; }
           ctx.ui.notify(addEntry(ctx.cwd, domain, key, value), "info");
           break;
         }
@@ -202,7 +202,7 @@ export default function (pi: ExtensionAPI) {
           break;
         }
         default:
-          ctx.ui.notify(`Unknown subcommand: ${subcommand}. Use create, add, get, list, purge, stats, or delete.`, "warning");
+          ctx.ui.notify(`Unknown subcommand: ${subcommand}. Use create, set, get, list, purge, stats, or delete.`, "warning");
       }
     },
   });

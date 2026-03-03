@@ -5,13 +5,14 @@
  * the built-in [Skills] and [Extensions] sections.
  *
  * Each module shows its visibility status:
- *   * module-name   (green, shown)
- *   - module-name   (dim, hidden)
+ *   * module-name   (shown)
+ *   - module-name   (hidden)
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import type { ModuleContents } from "./modules/registry.js";
+import { formatModulesBlock } from "./modules/display.js";
 
 export default function (pi: ExtensionAPI) {
   pi.registerMessageRenderer("startup-modules", (message, _options, theme) => {
@@ -21,15 +22,12 @@ export default function (pi: ExtensionAPI) {
 
     if (!details?.modules?.length) return undefined;
 
-    const header = theme.fg("mdHeading", "[Modules]");
-    const lines = details.modules.map(({ name, shown }) => {
-      if (shown) {
-        return `    ${theme.fg("success", "*")} ${theme.fg("dim", name)}`;
-      }
-      return `    ${theme.fg("dim", `- ${name}`)}`;
+    const text = formatModulesBlock(details.modules, {
+      formatHeader: (text) => theme.fg("mdHeading", text),
+      formatShownLine: (name) => `${theme.fg("success", "*")} ${theme.fg("dim", name)}`,
+      formatHiddenLine: (name) => theme.fg("dim", `- ${name}`),
     });
-
-    return new Text(`${header}\n${lines.join("\n")}`, 0, 0);
+    return new Text(text, 0, 0);
   });
 
   function emitModulesHeader() {

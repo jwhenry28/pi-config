@@ -1,21 +1,19 @@
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { Skill } from "@mariozechner/pi-coding-agent";
 import type { WorkflowConfig, WorkflowStep } from "./types.js";
 import { resolveModelAlias, parseModelRef } from "./models.js";
+import { listYamlBasenames } from "../shared/yaml-files.js";
 
 export function getWorkflowsDir(cwd: string): string {
 	return join(cwd, ".pi", "workflows");
 }
 
 export function listWorkflows(cwd: string): string[] {
-	const dir = getWorkflowsDir(cwd);
-	if (!existsSync(dir)) return [];
-	return readdirSync(dir)
-		.filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"))
-		.map((f) => f.replace(/\.ya?ml$/, ""));
+	const workflowsDirectory = getWorkflowsDir(cwd);
+	return listYamlBasenames(workflowsDirectory);
 }
 
 function parseModules(value: unknown, stepNum?: number): string[] | undefined {

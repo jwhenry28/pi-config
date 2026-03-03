@@ -3,6 +3,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { loadSkills } from "@mariozechner/pi-coding-agent";
 import type { WorkflowState } from "./types.js";
 import { listWorkflows, loadWorkflowFile, validate } from "./loader.js";
+import { completeNames } from "../shared/yaml-files.js";
 import { currentStep, updateStatus, runCurrentStep, advanceToNextStep, autoAdvance, autoJump, evaluateConditions, jumpToStep, restoreOriginalModel, restoreOriginalModules, filterConditionResults, buildModuleSkillsBlock } from "./runner.js";
 
 export default function workflowExtension(pi: ExtensionAPI) {
@@ -23,9 +24,8 @@ export default function workflowExtension(pi: ExtensionAPI) {
 		getArgumentCompletions: (prefix) => {
 			const subcommands = ["continue", "status", "abort"];
 			const workflows = listWorkflows(state.cwd);
-			const all = [...subcommands, ...workflows];
-			const filtered = all.filter((s) => s.startsWith(prefix));
-			return filtered.length > 0 ? filtered.map((s) => ({ value: s, label: s })) : null;
+			const allNames = [...subcommands, ...workflows];
+			return completeNames(prefix, allNames);
 		},
 		handler: async (args, ctx) => {
 			const trimmed = args.trim();
