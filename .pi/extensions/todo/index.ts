@@ -4,14 +4,14 @@ import type { AutocompleteItem } from "@mariozechner/pi-tui";
 import { handleAdd } from "./add.js";
 import { handleList } from "./list.js";
 import { handleDesign, type Skills } from "./design.js";
-import { handleRemove } from "./remove.js";
+import { handleComplete } from "./complete.js";
 import { registerTodoTool } from "./tool.js";
 
 const SUBCOMMANDS: AutocompleteItem[] = [
   { value: "add", label: "add — Add a new todo item" },
   { value: "list", label: "list — List all open todos" },
   { value: "design", label: "design — Generate a design for a todo" },
-  { value: "remove", label: "remove — Remove a todo item" },
+  { value: "complete", label: "complete — Complete a todo item" },
   { value: "help", label: "help — Show help message" },
 ];
 
@@ -26,7 +26,7 @@ export default function todoExtension(pi: ExtensionAPI) {
   });
 
   pi.registerCommand("todo", {
-    description: "Manage todo items: add, list, design, remove",
+    description: "Manage todo items: add, list, design, complete",
     getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
       const trimmed = prefix.trimStart();
       // Only complete the first word (subcommand), not subsequent arguments
@@ -46,7 +46,7 @@ export default function todoExtension(pi: ExtensionAPI) {
             "  add <name> <description>   Add a new todo item",
             "  list                       List all open todos",
             "  design <name>              Generate a design for a todo via brainstorming",
-            "  remove <name>              Remove a todo item",
+            "  complete <name>             Complete a todo item",
             "  help                       Show this help message",
             "",
             "Names must match [a-zA-Z0-9_-]+.",
@@ -66,11 +66,11 @@ export default function todoExtension(pi: ExtensionAPI) {
         case "design":
           await handleDesign(parts, ctx, pi, allSkills);
           break;
-        case "remove":
-          await handleRemove(parts, ctx);
+        case "complete":
+          await handleComplete(parts, ctx);
           break;
         default:
-          ctx.ui.notify(`Unknown subcommand: ${subcommand}. Use add, list, design, or remove.`, "warning");
+          ctx.ui.notify(`Unknown subcommand: ${subcommand}. Use add, list, design, or complete.`, "warning");
       }
     },
   });

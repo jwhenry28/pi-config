@@ -58,6 +58,16 @@ export function loadWorkflowFile(name: string, cwd: string): WorkflowConfig {
 			throw new Error(`Step ${idx + 1} "${s.name}": must have either 'command' or 'prompt'`);
 		}
 
+		// Parse maxExecutions (shared by both step types)
+		const rawMax = s.maxExecutions;
+		let maxExecutions = 10; // default
+		if (rawMax != null) {
+			if (typeof rawMax !== "number" || !Number.isInteger(rawMax) || rawMax <= 0) {
+				throw new Error(`Step ${idx + 1} "${s.name}": 'maxExecutions' must be a positive integer, got: ${rawMax}`);
+			}
+			maxExecutions = rawMax;
+		}
+
 		// Parse conditions (shared by both step types)
 		const conditions = s.conditions
 			? (s.conditions as Record<string, unknown>[]).map((c, ci) => {
@@ -101,6 +111,7 @@ export function loadWorkflowFile(name: string, cwd: string): WorkflowConfig {
 				name: s.name as string,
 				command: s.command as string,
 				args: (s.args as Record<string, string>) ?? undefined,
+				maxExecutions,
 				conditions,
 			} satisfies CommandStep;
 		}
@@ -115,6 +126,7 @@ export function loadWorkflowFile(name: string, cwd: string): WorkflowConfig {
 			skills: (s.skills as string[]) ?? [],
 			modules: parseModules(s.modules, idx + 1),
 			approval: s.approval === true,
+			maxExecutions,
 			conditions,
 		} satisfies PromptStep;
 	});

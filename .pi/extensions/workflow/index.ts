@@ -5,7 +5,7 @@ import type { WorkflowState } from "./types.js";
 import { isPromptStep } from "./types.js";
 import { listWorkflows, loadWorkflowFile, validate } from "./loader.js";
 import { completeNames } from "../shared/yaml-files.js";
-import { currentStep, updateStatus, runCurrentStep, advanceToNextStep, autoAdvance, autoJump, evaluateConditions, jumpToStep, restoreOriginalModel, restoreOriginalModules, filterConditionResults, buildModuleSkillsBlock } from "./runner.js";
+import { currentStep, updateStatus, runCurrentStep, advanceToNextStep, autoAdvance, restoreOriginalModel, restoreOriginalModules, filterConditionResults, buildModuleSkillsBlock, handlePostStep } from "./runner.js";
 import "./commands/check-todos-complete.js";
 
 export default function workflowExtension(pi: ExtensionAPI) {
@@ -119,7 +119,7 @@ export default function workflowExtension(pi: ExtensionAPI) {
 
 			state.originalModelId = ctx.model?.id ?? null;
 			state.originalModules = currentShownModules;
-			state.active = { id: randomUUID(), config, userPrompt, currentStepIndex: 0 };
+			state.active = { id: randomUUID(), config, userPrompt, currentStepIndex: 0, executionCounts: {} };
 			ctx.ui.notify(`Starting workflow "${config.name}" (${config.steps.length} steps)`, "info");
 			await runCurrentStep(pi, state, ctx);
 		},
@@ -154,30 +154,7 @@ export default function workflowExtension(pi: ExtensionAPI) {
 		const step = currentStep(state);
 		if (!step) return;
 
-		if (step.conditions?.length) {
-			const condResult = await evaluateConditions(pi, state, ctx);
-			if (!condResult) {
-				const name = state.active!.config.name;
-				state.active = null;
-				updateStatus(state, ctx);
-				await restoreOriginalModules(pi, state);
-				await restoreOriginalModel(pi, state, ctx);
-				ctx.ui.notify(`Workflow "${name}" aborted: condition evaluation failed`, "error");
-				return;
-			}
-			if (condResult.jump) {
-				jumpToStep(state, condResult.jump);
-				await autoJump(pi, state, ctx);
-			} else if (isPromptStep(step) && step.approval) {
-				ctx.ui.notify(`Step "${step.name}" complete. Use \`/workflow continue\` when ready.`, "info");
-			} else {
-				await autoAdvance(pi, state, ctx);
-			}
-		} else if (isPromptStep(step) && step.approval) {
-			ctx.ui.notify(`Step "${step.name}" complete. Use \`/workflow continue\` when you are ready.`, "info");
-		} else {
-			await autoAdvance(pi, state, ctx);
-		}
+		await handlePostStep(pi, state, ctx, step);
 	});
 
 	pi.on("session_before_switch", async (_event, ctx) => {

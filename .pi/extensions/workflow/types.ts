@@ -26,6 +26,7 @@ export interface PromptStep {
 	skills?: string[];
 	modules?: string[];
 	approval?: boolean;
+	maxExecutions: number;
 	conditions?: StepCondition[];
 }
 
@@ -33,6 +34,7 @@ export interface CommandStep {
 	name: string;
 	command: string;
 	args?: Record<string, string>;
+	maxExecutions: number;
 	conditions?: StepCondition[];
 }
 
@@ -69,6 +71,7 @@ export interface ActiveWorkflow {
 	config: WorkflowConfig;
 	userPrompt: string;
 	currentStepIndex: number;
+	executionCounts: Record<string, number>;
 }
 
 export interface WorkflowState {

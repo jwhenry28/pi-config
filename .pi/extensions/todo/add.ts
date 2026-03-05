@@ -16,7 +16,7 @@ export async function handleAdd(parts: string[], ctx: ExtensionCommandContext): 
   ensureDomain(ctx.cwd, TODO_DOMAIN);
   const existing = getEntry(ctx.cwd, TODO_DOMAIN, name);
   if (!existing.startsWith("Error")) {
-    ctx.ui.notify(`Todo "${name}" already exists. Use /todo remove to delete it first.`, "warning");
+    ctx.ui.notify(`Todo "${name}" already exists. Use /todo complete to complete it first.`, "warning");
     return;
   }
   const todo = JSON.stringify({ name, description, design: "" });

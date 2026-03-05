@@ -3,10 +3,10 @@ import type { ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { ensureDomain, getEntry, deleteEntry } from "../memory/store.js";
 import { TODO_DOMAIN, NAME_RE } from "./constants.js";
 
-export async function handleRemove(parts: string[], ctx: ExtensionCommandContext): Promise<void> {
+export async function handleComplete(parts: string[], ctx: ExtensionCommandContext): Promise<void> {
   const name = parts[1];
   if (!name) {
-    ctx.ui.notify("Usage: /todo remove <name>", "warning");
+    ctx.ui.notify("Usage: /todo complete <name>", "warning");
     return;
   }
   if (!NAME_RE.test(name)) {
@@ -27,9 +27,9 @@ export async function handleRemove(parts: string[], ctx: ExtensionCommandContext
     // proceed with deletion even if JSON is malformed
   }
   const confirmMsg = designPath
-    ? `Remove todo "${name}"? This will also delete the design file at ${designPath}.`
-    : `Remove todo "${name}"?`;
-  const confirmed = await ctx.ui.confirm("Remove todo", confirmMsg);
+    ? `Complete todo "${name}"? This will also delete the design file at ${designPath}.`
+    : `Complete todo "${name}"?`;
+  const confirmed = await ctx.ui.confirm("Complete todo", confirmMsg);
   if (!confirmed) {
     ctx.ui.notify("Cancelled", "info");
     return;
@@ -38,5 +38,5 @@ export async function handleRemove(parts: string[], ctx: ExtensionCommandContext
     unlinkSync(designPath);
   }
   deleteEntry(ctx.cwd, TODO_DOMAIN, name);
-  ctx.ui.notify(`Removed todo "${name}"`, "info");
+  ctx.ui.notify(`Completed todo "${name}"`, "info");
 }

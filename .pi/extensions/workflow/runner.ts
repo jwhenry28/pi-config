@@ -250,6 +250,63 @@ async function applyStepModel(
   return true;
 }
 
+export async function handlePostStep(
+  pi: ExtensionAPI,
+  state: WorkflowState,
+  ctx: ExtensionContext,
+  step: WorkflowStep,
+): Promise<void> {
+  if (!step.conditions?.length) {
+    if (isPromptStep(step) && step.approval) {
+      ctx.ui.notify(`Step "${step.name}" complete. Use \`/workflow continue\` when ready.`, "info");
+      return;
+    }
+    await autoAdvance(pi, state, ctx);
+    return;
+  }
+
+  const condResult = await evaluateConditions(pi, state, ctx);
+  if (!condResult) {
+    const name = state.active!.config.name;
+    state.active = null;
+    updateStatus(state, ctx);
+    await restoreOriginalModules(pi, state);
+    await restoreOriginalModel(pi, state, ctx);
+    ctx.ui.notify(`Workflow "${name}" aborted: condition evaluation failed`, "error");
+    return;
+  }
+
+  if (condResult.jump) {
+    if (isMaxExecutionsReached(state, condResult.jump)) {
+      const targetStep = state.active!.config.steps.find(s => s.name === condResult.jump)!;
+      ctx.ui.notify(`[Workflow] Step "${condResult.jump}" reached maxExecutions limit (${targetStep.maxExecutions}), advancing sequentially`, "warning");
+      await autoAdvance(pi, state, ctx);
+    } else {
+      jumpToStep(state, condResult.jump);
+      await autoJump(pi, state, ctx);
+    }
+    return;
+  }
+
+  if (isPromptStep(step) && step.approval) {
+    ctx.ui.notify(`Step "${step.name}" complete. Use \`/workflow continue\` when ready.`, "info");
+    return;
+  }
+
+  await autoAdvance(pi, state, ctx);
+}
+
+export function isMaxExecutionsReached(
+  state: WorkflowState,
+  targetStepName: string,
+): boolean {
+  if (!state.active) return false;
+  const targetStep = state.active.config.steps.find(s => s.name === targetStepName);
+  if (!targetStep) return false;
+  const count = state.active.executionCounts[targetStepName] ?? 0;
+  return count >= targetStep.maxExecutions;
+}
+
 export async function runCurrentStep(
   pi: ExtensionAPI,
   state: WorkflowState,
@@ -257,6 +314,9 @@ export async function runCurrentStep(
 ): Promise<void> {
   if (!state.active) return;
   const step = currentStep(state)!;
+
+  // Track execution count
+  state.active.executionCounts[step.name] = (state.active.executionCounts[step.name] ?? 0) + 1;
 
   updateStatus(state, ctx);
 
@@ -283,26 +343,7 @@ export async function runCurrentStep(
     }
 
     // Command steps don't fire agent_end, so handle post-step logic inline
-    if (step.conditions?.length) {
-      const condResult = await evaluateConditions(pi, state, ctx);
-      if (!condResult) {
-        const name = state.active!.config.name;
-        state.active = null;
-        updateStatus(state, ctx);
-        await restoreOriginalModules(pi, state);
-        await restoreOriginalModel(pi, state, ctx);
-        ctx.ui.notify(`Workflow "${name}" aborted: condition evaluation failed`, "error");
-        return;
-      }
-      if (condResult.jump) {
-        jumpToStep(state, condResult.jump);
-        await autoJump(pi, state, ctx);
-      } else {
-        await autoAdvance(pi, state, ctx);
-      }
-    } else {
-      await autoAdvance(pi, state, ctx);
-    }
+    await handlePostStep(pi, state, ctx, step);
     return;
   }
 
