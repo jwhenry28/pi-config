@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 // --- Types ---
@@ -20,16 +20,16 @@ export function memoryDir(cwd: string): string {
   return join(cwd, ".pi-memory");
 }
 
-export function domainPath(cwd: string, domain: string): string {
-  return join(memoryDir(cwd), `${domain}.json`);
+export function storePath(cwd: string, store: string): string {
+  return join(memoryDir(cwd), `${store}.json`);
 }
 
 // --- Validation ---
 
-const DOMAIN_RE = /^[a-zA-Z0-9_-]+$/;
+const STORE_RE = /^[a-zA-Z0-9_-]+$/;
 
-export function validateDomain(domain: string): string | null {
-  if (!DOMAIN_RE.test(domain)) return "Domain must match [a-zA-Z0-9_-]+";
+export function validateStore(store: string): string | null {
+  if (!STORE_RE.test(store)) return "Store name must match [a-zA-Z0-9_-]+";
   return null;
 }
 
@@ -45,82 +45,92 @@ function now(): string {
   return new Date().toISOString();
 }
 
-export function readDomain(cwd: string, domain: string): MemoryFile | null {
-  const p = domainPath(cwd, domain);
+export function readStore(cwd: string, store: string): MemoryFile | null {
+  const p = storePath(cwd, store);
   if (!existsSync(p)) return null;
   return JSON.parse(readFileSync(p, "utf-8")) as MemoryFile;
 }
 
-export function writeDomain(cwd: string, domain: string, data: MemoryFile): void {
+export function writeStore(cwd: string, store: string, data: MemoryFile): void {
   const dir = memoryDir(cwd);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(domainPath(cwd, domain), JSON.stringify(data, null, 2), "utf-8");
+  writeFileSync(storePath(cwd, store), JSON.stringify(data, null, 2), "utf-8");
+}
+
+// --- Listing ---
+
+export function listStoreNames(cwd: string): string[] {
+  const dir = memoryDir(cwd);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".json"))
+    .map((f) => f.replace(/\.json$/, ""));
 }
 
 // --- High-level operations ---
 
-export function ensureDomain(cwd: string, domain: string): void {
-  if (readDomain(cwd, domain)) return;
+export function ensureStore(cwd: string, store: string): void {
+  if (readStore(cwd, store)) return;
   const ts = now();
-  writeDomain(cwd, domain, {
+  writeStore(cwd, store, {
     metadata: { created: ts, last_updated: ts, last_visited: ts },
     entries: {},
   });
 }
 
-export function createDomain(cwd: string, domain: string): string {
-  const err = validateDomain(domain);
+export function createStore(cwd: string, store: string): string {
+  const err = validateStore(store);
   if (err) return `Error: ${err}`;
-  if (readDomain(cwd, domain)) return `Error: Domain "${domain}" already exists`;
+  if (readStore(cwd, store)) return `Error: Store "${store}" already exists`;
   const ts = now();
-  writeDomain(cwd, domain, {
+  writeStore(cwd, store, {
     metadata: { created: ts, last_updated: ts, last_visited: ts },
     entries: {},
   });
-  return `Created domain "${domain}"`;
+  return `Created store "${store}"`;
 }
 
-export function addEntry(cwd: string, domain: string, key: string, value: string): string {
-  const domErr = validateDomain(domain);
-  if (domErr) return `Error: ${domErr}`;
+export function addEntry(cwd: string, store: string, key: string, value: string): string {
+  const storeErr = validateStore(store);
+  if (storeErr) return `Error: ${storeErr}`;
   const keyErr = validateKey(key);
   if (keyErr) return `Error: ${keyErr}`;
-  const data = readDomain(cwd, domain);
-  if (!data) return `Error: Domain "${domain}" does not exist`;
+  const data = readStore(cwd, store);
+  if (!data) return `Error: Store "${store}" does not exist`;
   data.entries[key] = Buffer.from(value).toString("base64");
   data.metadata.last_updated = now();
-  writeDomain(cwd, domain, data);
-  return `Added key "${key}" to domain "${domain}"`;
+  writeStore(cwd, store, data);
+  return `Added key "${key}" to store "${store}"`;
 }
 
-export function getEntry(cwd: string, domain: string, key: string): string {
-  const domErr = validateDomain(domain);
-  if (domErr) return `Error: ${domErr}`;
-  const data = readDomain(cwd, domain);
-  if (!data) return `Error: Domain "${domain}" does not exist`;
+export function getEntry(cwd: string, store: string, key: string): string {
+  const storeErr = validateStore(store);
+  if (storeErr) return `Error: ${storeErr}`;
+  const data = readStore(cwd, store);
+  if (!data) return `Error: Store "${store}" does not exist`;
   const encoded = data.entries[key];
-  if (encoded === undefined) return `Error: Key "${key}" not found in domain "${domain}"`;
+  if (encoded === undefined) return `Error: Key "${key}" not found in store "${store}"`;
   data.metadata.last_visited = now();
-  writeDomain(cwd, domain, data);
+  writeStore(cwd, store, data);
   return Buffer.from(encoded, "base64").toString("utf-8");
 }
 
-export function listKeys(cwd: string, domain: string): string {
-  const domErr = validateDomain(domain);
-  if (domErr) return `Error: ${domErr}`;
-  const data = readDomain(cwd, domain);
-  if (!data) return `Error: Domain "${domain}" does not exist`;
+export function listKeys(cwd: string, store: string): string {
+  const storeErr = validateStore(store);
+  if (storeErr) return `Error: ${storeErr}`;
+  const data = readStore(cwd, store);
+  if (!data) return `Error: Store "${store}" does not exist`;
   const keys = Object.keys(data.entries);
-  if (keys.length === 0) return `Domain "${domain}" has no entries`;
+  if (keys.length === 0) return `Store "${store}" has no entries`;
   return keys.join("\n");
 }
 
 /**
- * Read a single key from a domain, returning the decoded value or null.
- * Does not update last_visited. Creates the domain if it doesn't exist.
+ * Read a single key from a store, returning the decoded value or null.
+ * Does not update last_visited. Creates the store if it doesn't exist.
  */
-export function readKey(cwd: string, domain: string, key: string): string | null {
-  const data = readDomain(cwd, domain);
+export function readKey(cwd: string, store: string, key: string): string | null {
+  const data = readStore(cwd, store);
   if (!data) return null;
   const encoded = data.entries[key];
   if (encoded === undefined) return null;
@@ -128,26 +138,26 @@ export function readKey(cwd: string, domain: string, key: string): string | null
 }
 
 /**
- * Write a single key to a domain, creating the domain if needed.
+ * Write a single key to a store, creating the store if needed.
  */
-export function writeKey(cwd: string, domain: string, key: string, value: string): void {
-  ensureDomain(cwd, domain);
-  const data = readDomain(cwd, domain)!;
+export function writeKey(cwd: string, store: string, key: string, value: string): void {
+  ensureStore(cwd, store);
+  const data = readStore(cwd, store)!;
   data.entries[key] = Buffer.from(value).toString("base64");
   data.metadata.last_updated = now();
-  writeDomain(cwd, domain, data);
+  writeStore(cwd, store, data);
 }
 
-export function deleteEntry(cwd: string, domain: string, key: string): string {
-  const domErr = validateDomain(domain);
-  if (domErr) return `Error: ${domErr}`;
+export function deleteEntry(cwd: string, store: string, key: string): string {
+  const storeErr = validateStore(store);
+  if (storeErr) return `Error: ${storeErr}`;
   const keyErr = validateKey(key);
   if (keyErr) return `Error: ${keyErr}`;
-  const data = readDomain(cwd, domain);
-  if (!data) return `Error: Domain "${domain}" does not exist`;
-  if (data.entries[key] === undefined) return `Error: Key "${key}" not found in domain "${domain}"`;
+  const data = readStore(cwd, store);
+  if (!data) return `Error: Store "${store}" does not exist`;
+  if (data.entries[key] === undefined) return `Error: Key "${key}" not found in store "${store}"`;
   delete data.entries[key];
   data.metadata.last_updated = now();
-  writeDomain(cwd, domain, data);
-  return `Deleted key "${key}" from domain "${domain}"`;
+  writeStore(cwd, store, data);
+  return `Deleted key "${key}" from store "${store}"`;
 }

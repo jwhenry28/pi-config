@@ -1,87 +1,90 @@
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Type } from "@sinclair/typebox";
 import {
 	createAgentSession,
 	SessionManager,
 	SettingsManager,
 	DefaultResourceLoader,
 	createCodingTools,
-	AuthStorage,
 	type ExtensionContext,
+	type ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 import type { PromptCondition, CommandCondition } from "./types.js";
 import { resolvePrompt } from "./loader.js";
 import { resolveModelAlias, parseModelRef } from "./models.js";
 import { getConditionCommand } from "./commands/registry.js";
 import type { CommandContext } from "./commands/registry.js";
+import { writeKey } from "../memory/store.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const conditionTemplate = readFileSync(join(__dirname, "condition-prompt.md"), "utf-8");
 
-const MAX_RETRIES = 5;
-
-export interface ConditionResult {
-	result: "yes" | "no";
-	explanation: string;
-}
-
-function parseConditionResult(text: string): ConditionResult | null {
-	const match = text.match(/\{[^{}]*"result"\s*:\s*"(yes|no)"[^{}]*\}/);
-	if (!match) return null;
-	try {
-		const parsed = JSON.parse(match[0]);
-		if ((parsed.result === "yes" || parsed.result === "no") && typeof parsed.explanation === "string") {
-			return { result: parsed.result, explanation: parsed.explanation };
-		}
-	} catch {}
-	return null;
-}
-
-function getLastAssistantText(messages: Array<{ role: string; content: unknown }>): string | null {
-	for (let i = messages.length - 1; i >= 0; i--) {
-		const msg = messages[i];
-		if (msg.role === "assistant") {
-			if (Array.isArray(msg.content)) {
-				const textParts = (msg.content as Array<{ type: string; text?: string }>)
-					.filter((p) => p.type === "text" && p.text)
-					.map((p) => p.text!);
-				if (textParts.length > 0) return textParts.join("\n");
+/**
+ * Create the evaluate_condition tool definition that writes to workflow memory.
+ */
+function createEvaluateConditionTool(cwd: string, workflowId: string): ToolDefinition {
+	return {
+		name: "evaluate_condition",
+		label: "Evaluate Condition",
+		description: "Report the result of a condition evaluation. Call this exactly once with your assessment.",
+		parameters: Type.Object({
+			result: Type.Union([Type.Literal("true"), Type.Literal("false")], {
+				description: 'Whether the condition is met: "true" or "false"',
+			}),
+			explanation: Type.String({
+				description: "Brief explanation of why the condition is or is not met",
+			}),
+		}),
+		async execute(_toolCallId, params) {
+			const { result, explanation } = params;
+			if (result !== "true" && result !== "false") {
+				return {
+					content: [{ type: "text", text: 'Error: result must be exactly "true" or "false". Please try again.' }],
+					isError: true,
+					details: {},
+				};
 			}
-		}
-	}
-	return null;
+			writeKey(cwd, workflowId, "workflow-condition-result",
+				JSON.stringify({ result, explanation }));
+			return {
+				content: [{ type: "text", text: `Condition evaluated: ${result} — ${explanation}` }],
+				details: {},
+			};
+		},
+	};
 }
 
 export async function evaluateCondition(
 	condition: PromptCondition,
 	cwd: string,
+	workflowId: string,
 	ctx: ExtensionContext,
-): Promise<ConditionResult | null> {
+): Promise<void> {
 	const resolvedPrompt = resolvePrompt(condition.prompt, cwd);
 	const systemPrompt = conditionTemplate.replace("%CONDITION_PROMPT%", resolvedPrompt);
 
-	// Resolve model alias to actual model reference (may include provider prefix)
 	const resolvedModelRef = resolveModelAlias(condition.model, cwd);
 	const { provider: specifiedProvider, modelId } = parseModelRef(resolvedModelRef);
-	
+
 	let model: any = null;
-	
-	// If provider is explicitly specified, use registry.find()
+
 	if (specifiedProvider) {
 		const registryAny = ctx.modelRegistry as any;
 		if (registryAny.find) {
 			model = registryAny.find(specifiedProvider, modelId);
 		}
 	} else {
-		// No provider specified, look up by model ID only
 		model = ctx.modelRegistry.getAll().find((m) => m.id === modelId);
 	}
-	
+
 	if (!model) {
 		ctx.ui.notify(`Condition model "${condition.model}" (resolved to "${resolvedModelRef}") not found in registry`, "error");
-		return null;
+		return;
 	}
+
+	const evaluateTool = createEvaluateConditionTool(cwd, workflowId);
 
 	const loader = new DefaultResourceLoader({
 		cwd,
@@ -95,6 +98,7 @@ export async function evaluateCondition(
 		model,
 		thinkingLevel: "off",
 		tools: createCodingTools(cwd),
+		customTools: [evaluateTool],
 		resourceLoader: loader,
 		sessionManager: SessionManager.inMemory(),
 		settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
@@ -103,21 +107,6 @@ export async function evaluateCondition(
 
 	try {
 		await session.prompt(resolvedPrompt);
-
-		for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-			const lastText = getLastAssistantText(session.messages as Array<{ role: string; content: unknown }>);
-			if (lastText) {
-				const parsed = parseConditionResult(lastText);
-				if (parsed) return parsed;
-			}
-
-			await session.prompt(
-				'Your last response did not match the required format. Please reply with ONLY a JSON object like: {"result": "yes", "explanation": "reason"} or {"result": "no", "explanation": "reason"}. Nothing else.',
-			);
-		}
-
-		// All retries exhausted
-		return null;
 	} finally {
 		session.dispose();
 	}
@@ -128,19 +117,17 @@ export async function evaluateCommandCondition(
 	cwd: string,
 	workflowId: string,
 	ctx: ExtensionContext,
-): Promise<ConditionResult | null> {
+): Promise<void> {
 	const fn = getConditionCommand(condition.command);
 	if (!fn) {
 		ctx.ui.notify(`Command "${condition.command}" not found in registry`, "error");
-		return null;
+		return;
 	}
 
 	try {
 		const commandCtx: CommandContext = { cwd, workflowId };
-		const result = await fn(commandCtx, condition.args);
-		return result;
+		await fn(commandCtx, condition.args);
 	} catch (e) {
 		ctx.ui.notify(`Command "${condition.command}" failed: ${(e as Error).message}`, "warning");
-		return null;
 	}
 }

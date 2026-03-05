@@ -13,6 +13,7 @@ import { resolvePrompt } from "./loader.js";
 import { evaluateCondition, evaluateCommandCondition } from "./evaluator.js";
 import { resolveModelAlias, parseModelRef } from "./models.js";
 import { getStepCommand } from "./commands/registry.js";
+import { readKey, deleteEntry } from "../memory/store.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -276,6 +277,11 @@ export async function handlePostStep(
     return;
   }
 
+  if (condResult === "paused") {
+    // Workflow is paused waiting for manual condition evaluation
+    return;
+  }
+
   if (condResult.jump) {
     if (isMaxExecutionsReached(state, condResult.jump)) {
       const targetStep = state.active!.config.steps.find(s => s.name === condResult.jump)!;
@@ -317,6 +323,14 @@ export async function runCurrentStep(
 
   // Track execution count
   state.active.executionCounts[step.name] = (state.active.executionCounts[step.name] ?? 0) + 1;
+
+  // Emit step marker for context filtering
+  pi.sendMessage({
+    customType: "workflow:step-marker",
+    content: `--- Step: ${step.name} (execution ${state.active.executionCounts[step.name]}) ---`,
+    display: true,
+    details: { stepName: step.name, execution: state.active.executionCounts[step.name] },
+  });
 
   updateStatus(state, ctx);
 
@@ -421,7 +435,6 @@ export async function advanceToNextStep(
   updateStatus(state, ctx);
 
   await ctx.waitForIdle();
-  await ctx.newSession();
   state.advancing = false;
   await runCurrentStep(pi, state, ctx);
 }
@@ -438,61 +451,89 @@ export async function evaluateConditions(
   pi: ExtensionAPI,
   state: WorkflowState,
   ctx: ExtensionContext,
-): Promise<{ jump: string } | null> {
+): Promise<{ jump: string } | "paused" | null> {
   const step = currentStep(state);
   if (!step?.conditions?.length) return null;
 
+  const workflowId = state.active!.id;
   const total = step.conditions.length;
-  for (let i = 0; i < total; i++) {
+  const startIndex = state.pendingConditionIndex ?? 0;
+
+  for (let i = startIndex; i < total; i++) {
     const cond = step.conditions[i];
 
-    let result: { result: "yes" | "no"; explanation: string } | null;
+    // Clear previous result
+    deleteEntry(state.cwd, workflowId, "workflow-condition-result");
 
     if (isCommandCondition(cond)) {
       ctx.ui.notify(
         `Evaluating condition ${i + 1}/${total}: command "${cond.command}"`,
         "info",
       );
-      result = await evaluateCommandCondition(cond, state.cwd, state.active!.id, ctx);
+      await evaluateCommandCondition(cond, state.cwd, workflowId, ctx);
     } else {
       ctx.ui.notify(
         `Evaluating condition ${i + 1}/${total}: "${cond.prompt.slice(0, 60)}..."`,
         "info",
       );
-      result = await evaluateCondition(cond, state.cwd, ctx);
+      await evaluateCondition(cond, state.cwd, workflowId, ctx);
     }
 
-    if (!result) {
-      // Retries exhausted — abort
-      return null;
+    // Read result from memory
+    const raw = readKey(state.cwd, workflowId, "workflow-condition-result");
+    if (!raw) {
+      // Model didn't call the tool / command didn't write — pause for manual evaluation
+      state.pendingConditionIndex = i;
+      const condLabel = isCommandCondition(cond)
+        ? `command: ${cond.command}`
+        : `"${cond.prompt.slice(0, 80)}${cond.prompt.length > 80 ? "..." : ""}"`;
+      ctx.ui.notify(
+        `⚠️ Condition ${i + 1}/${total} (${condLabel}) did not produce a result. Use \`/evaluate-condition true/false <explanation>\` to evaluate manually, then \`/workflow continue\` to resume.`,
+        "warning",
+      );
+      return "paused";
     }
 
-    ctx.ui.notify(
-      `Condition ${i + 1}: ${result.result} — ${result.explanation}`,
-      "info",
-    );
+    let parsed: { result: string; explanation: string };
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      state.pendingConditionIndex = i;
+      ctx.ui.notify(
+        `⚠️ Condition ${i + 1}/${total} produced invalid result. Use \`/evaluate-condition true/false <explanation>\` to evaluate manually.`,
+        "warning",
+      );
+      return "paused";
+    }
 
     const condLabel = isCommandCondition(cond)
       ? `command: ${cond.command}`
       : `${cond.prompt.slice(0, 80)}${cond.prompt.length > 80 ? "..." : ""}`;
 
+    ctx.ui.notify(
+      `Condition ${i + 1}: ${parsed.result} — ${parsed.explanation}`,
+      "info",
+    );
+
     pi.sendMessage({
       customType: "workflow:condition-result",
-      content: `**Condition ${i + 1}/${total}** — \`${condLabel}\`\n\n**Result:** ${result.result}\n**Explanation:** ${result.explanation}`,
+      content: `**Condition ${i + 1}/${total}** — \`${condLabel}\`\n\n**Result:** ${parsed.result}\n**Explanation:** ${parsed.explanation}`,
       display: true,
       details: {
         conditionIndex: i,
-        result: result.result,
-        explanation: result.explanation,
+        result: parsed.result,
+        explanation: parsed.explanation,
       },
     });
 
-    if (result.result === "yes") {
+    if (parsed.result === "true") {
+      state.pendingConditionIndex = null;
       return { jump: cond.jump };
     }
   }
 
   // No conditions matched — sequential advance
+  state.pendingConditionIndex = null;
   return { jump: "" };
 }
 
@@ -513,7 +554,6 @@ export async function autoJump(
   setTimeout(async () => {
     try {
       await cmdCtx.waitForIdle();
-      await cmdCtx.newSession();
       state.advancing = false;
       await runCurrentStep(pi, state, cmdCtx);
     } catch (e) {
@@ -526,17 +566,51 @@ export async function autoJump(
 }
 
 /** Auto-advance from agent_end (no command context available directly). */
-export function filterConditionResults(
+export function filterToCurrentStep(
   event: ContextEvent,
+  state: WorkflowState,
 ): { messages: typeof event.messages } | undefined {
-  const filtered = event.messages.filter(
+  if (!state.active) {
+    // No active workflow — just filter condition results as before
+    const filtered = event.messages.filter(
+      (m: any) =>
+        !(m.role === "custom" && m.customType === "workflow:condition-result"),
+    );
+    if (filtered.length !== event.messages.length) {
+      return { messages: filtered };
+    }
+    return undefined;
+  }
+
+  const step = currentStep(state);
+  if (!step) return undefined;
+
+  const execCount = state.active.executionCounts[step.name] ?? 0;
+
+  // Find the last step marker matching current step + execution
+  let markerIndex = -1;
+  for (let i = event.messages.length - 1; i >= 0; i--) {
+    const m = event.messages[i] as any;
+    const isCurrentStepMarker =
+      m.role === "custom" &&
+      m.customType === "workflow:step-marker" &&
+      m.details?.stepName === step.name &&
+      m.details?.execution === execCount;
+    if (isCurrentStepMarker) {
+      markerIndex = i;
+      break;
+    }
+  }
+
+  if (markerIndex === -1) return undefined;
+
+  // Keep only messages after the marker, excluding condition results
+  const filtered = event.messages.slice(markerIndex + 1).filter(
     (m: any) =>
       !(m.role === "custom" && m.customType === "workflow:condition-result"),
   );
-  if (filtered.length !== event.messages.length) {
-    return { messages: filtered };
-  }
-  return undefined;
+
+  return { messages: filtered };
 }
 
 export async function autoAdvance(
@@ -561,7 +635,6 @@ export async function autoAdvance(
   setTimeout(async () => {
     try {
       await cmdCtx.waitForIdle();
-      await cmdCtx.newSession();
       state.advancing = false;
       await runCurrentStep(pi, state, cmdCtx);
     } catch (e) {

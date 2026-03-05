@@ -5,7 +5,8 @@ import type { WorkflowState } from "./types.js";
 import { isPromptStep } from "./types.js";
 import { listWorkflows, loadWorkflowFile, validate } from "./loader.js";
 import { completeNames } from "../shared/yaml-files.js";
-import { currentStep, updateStatus, runCurrentStep, advanceToNextStep, autoAdvance, restoreOriginalModel, restoreOriginalModules, filterConditionResults, buildModuleSkillsBlock, handlePostStep } from "./runner.js";
+import { currentStep, updateStatus, runCurrentStep, advanceToNextStep, autoAdvance, restoreOriginalModel, restoreOriginalModules, filterToCurrentStep, buildModuleSkillsBlock, handlePostStep, evaluateConditions, jumpToStep, autoJump, isMaxExecutionsReached } from "./runner.js";
+import { writeKey } from "../memory/store.js";
 import "./commands/check-todos-complete.js";
 
 export default function workflowExtension(pi: ExtensionAPI) {
@@ -17,6 +18,7 @@ export default function workflowExtension(pi: ExtensionAPI) {
 		savedCommandCtx: null,
 		originalModelId: null,
 		originalModules: null,
+		pendingConditionIndex: null,
 	};
 
 	// --- Command ---
@@ -38,6 +40,40 @@ export default function workflowExtension(pi: ExtensionAPI) {
 					ctx.ui.notify("No workflow is running", "warning");
 					return;
 				}
+
+				// If a condition is pending, resume condition evaluation
+				if (state.pendingConditionIndex !== null) {
+					state.savedCommandCtx = ctx;
+					const condResult = await evaluateConditions(pi, state, ctx);
+					if (condResult === "paused") {
+						// Still paused — user needs to /evaluate-condition first
+						return;
+					}
+					if (!condResult) {
+						const name = state.active!.config.name;
+						state.active = null;
+						updateStatus(state, ctx);
+						await restoreOriginalModules(pi, state);
+						await restoreOriginalModel(pi, state, ctx);
+						ctx.ui.notify(`Workflow "${name}" aborted: condition evaluation failed`, "error");
+						return;
+					}
+					// condResult has a jump
+					if (condResult.jump) {
+						if (isMaxExecutionsReached(state, condResult.jump)) {
+							const targetStep = state.active!.config.steps.find(s => s.name === condResult.jump)!;
+							ctx.ui.notify(`[Workflow] Step "${condResult.jump}" reached maxExecutions limit (${targetStep.maxExecutions}), advancing sequentially`, "warning");
+							await advanceToNextStep(pi, state, ctx);
+						} else {
+							jumpToStep(state, condResult.jump);
+							await autoJump(pi, state, ctx);
+						}
+					} else {
+						await advanceToNextStep(pi, state, ctx);
+					}
+					return;
+				}
+
 				const step = currentStep(state);
 				if (!step || !isPromptStep(step) || !step.approval) {
 					ctx.ui.notify("Current step does not require approval", "warning");
@@ -81,17 +117,10 @@ export default function workflowExtension(pi: ExtensionAPI) {
 				return;
 			}
 
-			const spaceIdx = trimmed.indexOf(" ");
-			if (spaceIdx === -1) {
-				ctx.ui.notify("Usage: /workflow <name> <prompt>", "warning");
-				return;
-			}
-			const workflowName = trimmed.slice(0, spaceIdx);
-			const userPrompt = trimmed.slice(spaceIdx + 1).trim();
-			if (!userPrompt) {
-				ctx.ui.notify("Usage: /workflow <name> <prompt>", "warning");
-				return;
-			}
+			const wsMatch = trimmed.match(/\s/);
+			const wsIdx = wsMatch ? wsMatch.index! : -1;
+			const workflowName = wsIdx === -1 ? trimmed : trimmed.slice(0, wsIdx);
+			const userPrompt = wsIdx === -1 ? "" : trimmed.slice(wsIdx + 1).trim();
 
 			let config;
 			try {
@@ -125,6 +154,36 @@ export default function workflowExtension(pi: ExtensionAPI) {
 		},
 	});
 
+	pi.registerCommand("evaluate-condition", {
+		description: "Manually evaluate a workflow condition: /evaluate-condition <true/false> <explanation>",
+		handler: async (args, ctx) => {
+			if (!state.active) {
+				ctx.ui.notify("No workflow is running", "warning");
+				return;
+			}
+			if (state.pendingConditionIndex === null) {
+				ctx.ui.notify("No condition is pending evaluation", "warning");
+				return;
+			}
+
+			const trimmed = args.trim();
+			const spaceIdx = trimmed.indexOf(" ");
+			const resultStr = spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx);
+			const explanation = spaceIdx === -1 ? "Manual evaluation" : trimmed.slice(spaceIdx + 1).trim();
+
+			if (resultStr !== "true" && resultStr !== "false") {
+				ctx.ui.notify('Usage: /evaluate-condition <true/false> <explanation>', "warning");
+				return;
+			}
+
+			writeKey(state.cwd, state.active.id, "workflow-condition-result",
+				JSON.stringify({ result: resultStr, explanation }));
+
+			ctx.ui.notify(`Condition manually evaluated: ${resultStr} — ${explanation}`, "info");
+			ctx.ui.notify('Use `/workflow continue` to resume the workflow.', "info");
+		},
+	});
+
 	// --- Events ---
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -134,7 +193,7 @@ export default function workflowExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("context", async (event) => {
-		return filterConditionResults(event);
+		return filterToCurrentStep(event, state);
 	});
 
 	pi.on("before_agent_start", async (event) => {

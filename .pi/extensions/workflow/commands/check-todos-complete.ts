@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { registerConditionCommand } from "./registry.js";
-import { readKey } from "../../memory/store.js";
+import { readKey, writeKey } from "../../memory/store.js";
 
 registerConditionCommand("check-todos-complete", async (ctx, args) => {
 	const memoryKey = args?.memoryKey;
@@ -38,14 +38,10 @@ registerConditionCommand("check-todos-complete", async (ctx, args) => {
 	const total = unchecked + checked;
 
 	if (unchecked > 0) {
-		return {
-			result: "yes",
-			explanation: `${unchecked} of ${total} tasks remaining`,
-		};
+		writeKey(ctx.cwd, ctx.workflowId, "workflow-condition-result",
+			JSON.stringify({ result: "true", explanation: `${unchecked} of ${total} tasks remaining` }));
+	} else {
+		writeKey(ctx.cwd, ctx.workflowId, "workflow-condition-result",
+			JSON.stringify({ result: "false", explanation: `All ${total} tasks complete` }));
 	}
-
-	return {
-		result: "no",
-		explanation: `All ${total} tasks complete`,
-	};
 });
