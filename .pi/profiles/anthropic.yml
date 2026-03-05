@@ -1,0 +1,6 @@
+name: Anthropic
+description: Anthropic-first workflow model aliases
+workflow_models:
+  smart: anthropic/claude-opus-4-6
+  general: anthropic/claude-sonnet-4-5
+  fast: anthropic/claude-haiku-4-5

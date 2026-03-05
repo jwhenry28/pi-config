@@ -7,10 +7,12 @@ import type {
   ExtensionCommandContext,
   ContextEvent,
 } from "@mariozechner/pi-coding-agent";
-import type { WorkflowConfig, WorkflowStep, WorkflowState } from "./types.js";
+import type { WorkflowConfig, WorkflowStep, WorkflowState, PromptStep, CommandStep } from "./types.js";
+import { isPromptStep, isCommandStep, isPromptCondition, isCommandCondition } from "./types.js";
 import { resolvePrompt } from "./loader.js";
-import { evaluateCondition } from "./evaluator.js";
+import { evaluateCondition, evaluateCommandCondition } from "./evaluator.js";
 import { resolveModelAlias, parseModelRef } from "./models.js";
+import { getStepCommand } from "./commands/registry.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -53,7 +55,7 @@ export async function restoreOriginalModel(
 
 export function computeEffectiveModules(
   config: WorkflowConfig,
-  step: WorkflowStep,
+  step: PromptStep,
 ): string[] {
   const workflowModules = config.modules ?? [];
   const stepModules = step.modules ?? [];
@@ -63,7 +65,7 @@ export function computeEffectiveModules(
 export function applyStepModules(
   pi: ExtensionAPI,
   config: WorkflowConfig,
-  step: WorkflowStep,
+  step: PromptStep,
 ): void {
   // Always hide all modules first — clean slate for every step
   pi.events.emit("module:set", { names: [] });
@@ -110,7 +112,7 @@ export function updateStatus(
 
 function injectSkills(
   pi: ExtensionAPI,
-  step: WorkflowStep,
+  step: PromptStep,
   state: WorkflowState,
 ): void {
   const stepSkills = step.skills ?? [];
@@ -135,7 +137,7 @@ function injectSkills(
 export function buildModuleSkillsBlock(
   pi: ExtensionAPI,
   config: WorkflowConfig,
-  step: WorkflowStep,
+  step: PromptStep,
 ): string {
   // Query modules extension for module contents
   let allModules: Map<string, any> = new Map();
@@ -204,7 +206,7 @@ function buildMessage(
 
 async function applyStepModel(
   pi: ExtensionAPI,
-  step: WorkflowStep,
+  step: PromptStep,
   ctx: ExtensionContext,
   cwd: string,
 ): Promise<boolean> {
@@ -248,6 +250,63 @@ async function applyStepModel(
   return true;
 }
 
+export async function handlePostStep(
+  pi: ExtensionAPI,
+  state: WorkflowState,
+  ctx: ExtensionContext,
+  step: WorkflowStep,
+): Promise<void> {
+  if (!step.conditions?.length) {
+    if (isPromptStep(step) && step.approval) {
+      ctx.ui.notify(`Step "${step.name}" complete. Use \`/workflow continue\` when ready.`, "info");
+      return;
+    }
+    await autoAdvance(pi, state, ctx);
+    return;
+  }
+
+  const condResult = await evaluateConditions(pi, state, ctx);
+  if (!condResult) {
+    const name = state.active!.config.name;
+    state.active = null;
+    updateStatus(state, ctx);
+    await restoreOriginalModules(pi, state);
+    await restoreOriginalModel(pi, state, ctx);
+    ctx.ui.notify(`Workflow "${name}" aborted: condition evaluation failed`, "error");
+    return;
+  }
+
+  if (condResult.jump) {
+    if (isMaxExecutionsReached(state, condResult.jump)) {
+      const targetStep = state.active!.config.steps.find(s => s.name === condResult.jump)!;
+      ctx.ui.notify(`[Workflow] Step "${condResult.jump}" reached maxExecutions limit (${targetStep.maxExecutions}), advancing sequentially`, "warning");
+      await autoAdvance(pi, state, ctx);
+    } else {
+      jumpToStep(state, condResult.jump);
+      await autoJump(pi, state, ctx);
+    }
+    return;
+  }
+
+  if (isPromptStep(step) && step.approval) {
+    ctx.ui.notify(`Step "${step.name}" complete. Use \`/workflow continue\` when ready.`, "info");
+    return;
+  }
+
+  await autoAdvance(pi, state, ctx);
+}
+
+export function isMaxExecutionsReached(
+  state: WorkflowState,
+  targetStepName: string,
+): boolean {
+  if (!state.active) return false;
+  const targetStep = state.active.config.steps.find(s => s.name === targetStepName);
+  if (!targetStep) return false;
+  const count = state.active.executionCounts[targetStepName] ?? 0;
+  return count >= targetStep.maxExecutions;
+}
+
 export async function runCurrentStep(
   pi: ExtensionAPI,
   state: WorkflowState,
@@ -256,22 +315,51 @@ export async function runCurrentStep(
   if (!state.active) return;
   const step = currentStep(state)!;
 
+  // Track execution count
+  state.active.executionCounts[step.name] = (state.active.executionCounts[step.name] ?? 0) + 1;
+
   updateStatus(state, ctx);
-  applyStepModules(pi, state.active.config, step);
 
   if (state.active.currentStepIndex === 0) {
     createMemoryDomain(state.cwd, state.active.id);
   }
 
-  const ok = await applyStepModel(pi, step, ctx, state.cwd);
+  if (isCommandStep(step)) {
+    const fn = getStepCommand(step.command);
+    if (!fn) {
+      ctx.ui.notify(`[Workflow] Step command "${step.command}" not found`, "error");
+      state.active = null;
+      updateStatus(state, ctx);
+      return;
+    }
+
+    try {
+      await fn({ cwd: state.cwd, workflowId: state.active.id }, step.args);
+    } catch (e) {
+      ctx.ui.notify(`[Workflow] Step command "${step.command}" failed: ${(e as Error).message}`, "error");
+      state.active = null;
+      updateStatus(state, ctx);
+      return;
+    }
+
+    // Command steps don't fire agent_end, so handle post-step logic inline
+    await handlePostStep(pi, state, ctx, step);
+    return;
+  }
+
+  // Prompt step: existing behavior
+  const promptStep = step as PromptStep;
+  applyStepModules(pi, state.active.config, promptStep);
+
+  const ok = await applyStepModel(pi, promptStep, ctx, state.cwd);
   if (!ok) {
     state.active = null;
     updateStatus(state, ctx);
     return;
   }
 
-  injectSkills(pi, step, state);
-  const resolvedPrompt = resolvePrompt(step.prompt, state.cwd);
+  injectSkills(pi, promptStep, state);
+  const resolvedPrompt = resolvePrompt(promptStep.prompt, state.cwd);
   const message = buildMessage(
     step,
     resolvedPrompt,
@@ -288,8 +376,9 @@ function notifyStepTransition(
   prevStepName: string,
 ): void {
   const next = currentStep(state)!;
+  const modelSuffix = isPromptStep(next) ? `, using model ${next.model}` : ` (command)`;
   ctx.ui.notify(
-    `✓ ${prevStepName} done. Proceeding to ${next.name}, using model ${next.model}.`,
+    `✓ ${prevStepName} done. Proceeding to ${next.name}${modelSuffix}.`,
     "info",
   );
 }
@@ -356,12 +445,22 @@ export async function evaluateConditions(
   const total = step.conditions.length;
   for (let i = 0; i < total; i++) {
     const cond = step.conditions[i];
-    ctx.ui.notify(
-      `Evaluating condition ${i + 1}/${total}: "${cond.prompt.slice(0, 60)}..."`,
-      "info",
-    );
 
-    const result = await evaluateCondition(cond, state.cwd, ctx);
+    let result: { result: "yes" | "no"; explanation: string } | null;
+
+    if (isCommandCondition(cond)) {
+      ctx.ui.notify(
+        `Evaluating condition ${i + 1}/${total}: command "${cond.command}"`,
+        "info",
+      );
+      result = await evaluateCommandCondition(cond, state.cwd, state.active!.id, ctx);
+    } else {
+      ctx.ui.notify(
+        `Evaluating condition ${i + 1}/${total}: "${cond.prompt.slice(0, 60)}..."`,
+        "info",
+      );
+      result = await evaluateCondition(cond, state.cwd, ctx);
+    }
 
     if (!result) {
       // Retries exhausted — abort
@@ -373,9 +472,13 @@ export async function evaluateConditions(
       "info",
     );
 
+    const condLabel = isCommandCondition(cond)
+      ? `command: ${cond.command}`
+      : `${cond.prompt.slice(0, 80)}${cond.prompt.length > 80 ? "..." : ""}`;
+
     pi.sendMessage({
       customType: "workflow:condition-result",
-      content: `**Condition ${i + 1}/${total}** — \`${cond.prompt.slice(0, 80)}${cond.prompt.length > 80 ? "..." : ""}\`\n\n**Result:** ${result.result}\n**Explanation:** ${result.explanation}`,
+      content: `**Condition ${i + 1}/${total}** — \`${condLabel}\`\n\n**Result:** ${result.result}\n**Explanation:** ${result.explanation}`,
       display: true,
       details: {
         conditionIndex: i,

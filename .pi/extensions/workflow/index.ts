@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { loadSkills } from "@mariozechner/pi-coding-agent";
 import type { WorkflowState } from "./types.js";
+import { isPromptStep } from "./types.js";
 import { listWorkflows, loadWorkflowFile, validate } from "./loader.js";
 import { completeNames } from "../shared/yaml-files.js";
-import { currentStep, updateStatus, runCurrentStep, advanceToNextStep, autoAdvance, autoJump, evaluateConditions, jumpToStep, restoreOriginalModel, restoreOriginalModules, filterConditionResults, buildModuleSkillsBlock } from "./runner.js";
+import { currentStep, updateStatus, runCurrentStep, advanceToNextStep, autoAdvance, restoreOriginalModel, restoreOriginalModules, filterConditionResults, buildModuleSkillsBlock, handlePostStep } from "./runner.js";
+import "./commands/check-todos-complete.js";
 
 export default function workflowExtension(pi: ExtensionAPI) {
 	const state: WorkflowState = {
@@ -37,7 +39,7 @@ export default function workflowExtension(pi: ExtensionAPI) {
 					return;
 				}
 				const step = currentStep(state);
-				if (!step?.approval) {
+				if (!step || !isPromptStep(step) || !step.approval) {
 					ctx.ui.notify("Current step does not require approval", "warning");
 					return;
 				}
@@ -54,7 +56,7 @@ export default function workflowExtension(pi: ExtensionAPI) {
 				const step = currentStep(state)!;
 				const total = state.active.config.steps.length;
 				const idx = state.active.currentStepIndex + 1;
-				const approvalStr = step.approval ? " (awaiting approval)" : "";
+				const approvalStr = isPromptStep(step) && step.approval ? " (awaiting approval)" : "";
 				ctx.ui.notify(`${state.active.config.name} — Step ${idx}/${total}: ${step.name}${approvalStr}`, "info");
 				return;
 			}
@@ -117,7 +119,7 @@ export default function workflowExtension(pi: ExtensionAPI) {
 
 			state.originalModelId = ctx.model?.id ?? null;
 			state.originalModules = currentShownModules;
-			state.active = { id: randomUUID(), config, userPrompt, currentStepIndex: 0 };
+			state.active = { id: randomUUID(), config, userPrompt, currentStepIndex: 0, executionCounts: {} };
 			ctx.ui.notify(`Starting workflow "${config.name}" (${config.steps.length} steps)`, "info");
 			await runCurrentStep(pi, state, ctx);
 		},
@@ -138,7 +140,7 @@ export default function workflowExtension(pi: ExtensionAPI) {
 	pi.on("before_agent_start", async (event) => {
 		if (!state.active) return;
 		const step = currentStep(state);
-		if (!step) return;
+		if (!step || !isPromptStep(step)) return;
 
 		// Replace the full <available_skills> block with one derived from the step's effective modules
 		const moduleSkills = buildModuleSkillsBlock(pi, state.active.config, step);
@@ -152,30 +154,7 @@ export default function workflowExtension(pi: ExtensionAPI) {
 		const step = currentStep(state);
 		if (!step) return;
 
-		if (step.conditions?.length) {
-			const condResult = await evaluateConditions(pi, state, ctx);
-			if (!condResult) {
-				const name = state.active!.config.name;
-				state.active = null;
-				updateStatus(state, ctx);
-				await restoreOriginalModules(pi, state);
-				await restoreOriginalModel(pi, state, ctx);
-				ctx.ui.notify(`Workflow "${name}" aborted: condition evaluation failed`, "error");
-				return;
-			}
-			if (condResult.jump) {
-				jumpToStep(state, condResult.jump);
-				await autoJump(pi, state, ctx);
-			} else if (step.approval) {
-				ctx.ui.notify(`Step "${step.name}" complete. Use \`/workflow continue\` when ready.`, "info");
-			} else {
-				await autoAdvance(pi, state, ctx);
-			}
-		} else if (step.approval) {
-			ctx.ui.notify(`Step "${step.name}" complete. Use \`/workflow continue\` when you are ready.`, "info");
-		} else {
-			await autoAdvance(pi, state, ctx);
-		}
+		await handlePostStep(pi, state, ctx, step);
 	});
 
 	pi.on("session_before_switch", async (_event, ctx) => {
