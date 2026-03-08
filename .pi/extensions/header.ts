@@ -11,8 +11,8 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
-import type { ModuleContents } from "./modules/registry.js";
-import { formatModulesBlock } from "./modules/display.js";
+import type { ModuleContents } from "./plugin/modules/registry.js";
+import { formatModulesBlock } from "./plugin/modules/display.js";
 
 export default function (pi: ExtensionAPI) {
   pi.registerMessageRenderer("startup-modules", (message, _options, theme) => {

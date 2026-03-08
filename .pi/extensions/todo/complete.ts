@@ -1,22 +1,21 @@
 import { existsSync, unlinkSync } from "node:fs";
-import type { ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { ensureDomain, getEntry, deleteEntry } from "../memory/store.js";
-import { TODO_DOMAIN, NAME_RE } from "./constants.js";
+import { ensureStore, getEntry, deleteEntry } from "../memory/store.js";
+import { NAME_RE, type TodoExecutionContext } from "./constants.js";
 
-export async function handleComplete(parts: string[], ctx: ExtensionCommandContext): Promise<void> {
+export async function handleComplete(parts: string[], tex: TodoExecutionContext): Promise<void> {
   const name = parts[1];
   if (!name) {
-    ctx.ui.notify("Usage: /todo complete <name>", "warning");
+    tex.ui.notify("Usage: /todo complete <name>", "warning");
     return;
   }
   if (!NAME_RE.test(name)) {
-    ctx.ui.notify(`Invalid name "${name}". Names must match [a-zA-Z0-9_-]+.`, "error");
+    tex.ui.notify(`Invalid name "${name}". Names must match [a-zA-Z0-9_-]+.`, "error");
     return;
   }
-  ensureDomain(ctx.cwd, TODO_DOMAIN);
-  const raw = getEntry(ctx.cwd, TODO_DOMAIN, name);
+  ensureStore(tex.cwd, tex.storeName);
+  const raw = getEntry(tex.cwd, tex.storeName, name);
   if (raw.startsWith("Error")) {
-    ctx.ui.notify(`Todo "${name}" not found.`, "error");
+    tex.ui.notify(`Todo "${name}" not found.`, "error");
     return;
   }
   let designPath = "";
@@ -29,14 +28,14 @@ export async function handleComplete(parts: string[], ctx: ExtensionCommandConte
   const confirmMsg = designPath
     ? `Complete todo "${name}"? This will also delete the design file at ${designPath}.`
     : `Complete todo "${name}"?`;
-  const confirmed = await ctx.ui.confirm("Complete todo", confirmMsg);
+  const confirmed = await tex.ui.confirm("Complete todo", confirmMsg);
   if (!confirmed) {
-    ctx.ui.notify("Cancelled", "info");
+    tex.ui.notify("Cancelled", "info");
     return;
   }
   if (designPath && existsSync(designPath)) {
     unlinkSync(designPath);
   }
-  deleteEntry(ctx.cwd, TODO_DOMAIN, name);
-  ctx.ui.notify(`Completed todo "${name}"`, "info");
+  deleteEntry(tex.cwd, tex.storeName, name);
+  tex.ui.notify(`Completed todo "${name}"`, "info");
 }

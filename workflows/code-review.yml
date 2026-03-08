@@ -1,0 +1,15 @@
+name: Code Review
+steps:
+  - name: Analyze
+    model: claude-opus-4-6
+    prompt: |
+      Find all areas of the codebase related to the workflow goal.
+      Read relevant files in full. Identify patterns, potential issues,
+      and key relationships between components.
+
+  - name: Summarize
+    model: claude-haiku-4-5
+    prompt: |
+      Read docs/code-review-findings.md and summarize the findings
+      into a few clear, concise sentences. Focus on the most important
+      takeaways.

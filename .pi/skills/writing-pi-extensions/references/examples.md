@@ -17,6 +17,7 @@ All examples at `examples/extensions/` in the pi-coding-agent package.
 
 | Example | Description | Key APIs |
 | --- | --- | --- |
+| `commands.ts` | List commands with autocomplete | `registerCommand`, `getArgumentCompletions`, `getCommands` |
 | `pirate.ts` | Modify system prompt | `registerCommand`, `before_agent_start` |
 | `summarize.ts` | Conversation summary | `registerCommand`, `ui.custom` |
 | `handoff.ts` | Cross-provider handoff | `registerCommand`, `ui.editor` |

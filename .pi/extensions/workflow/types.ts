@@ -82,4 +82,5 @@ export interface WorkflowState {
 	savedCommandCtx: ExtensionCommandContext | null;
 	originalModelId: string | null;
 	originalModules: string[] | null;
+	pendingConditionIndex: number | null;
 }

@@ -14,6 +14,21 @@ Load plan, review critically, execute tasks in batches, report for review betwee
 
 **Announce at start:** "I'm using the executing-plans skill to implement this plan."
 
+## Workflow Memory (Cross-Step State)
+
+When this skill is used inside a workflow, steps can share state through workflow memory.
+
+- Memory domain/store: workflow ID from the `Workflow: ...` header in the step message
+- Common keys from planning workflows:
+  - `plan` → plan directory path
+  - `plan-todo` → `todo.md` path
+- Agent tools:
+  - `memory_get` to load paths/context produced by earlier steps
+  - `memory_add` to persist outputs for later steps
+  - `memory_list` to inspect available keys
+
+If plan tasks specify memory writes/reads, execute them exactly and keep key names stable.
+
 ## The Process
 
 ### Step 1: Create a new branch
@@ -197,6 +212,7 @@ Organize functions from high-level to low-level (top-down reading):
 ## Remember
 - Review plan critically first
 - Follow plan steps exactly
+- Execute any plan-defined memory read/write handoffs exactly (keys + values)
 - Don't skip verifications
 - **ALWAYS run `dotnet test` at the end** - even if plan doesn't mention it
 - Reference skills when plan says to

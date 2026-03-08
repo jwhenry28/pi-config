@@ -1,6 +1,5 @@
-import type { ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { ensureDomain, getEntry, listKeys } from "../memory/store.js";
-import { TODO_DOMAIN } from "./constants.js";
+import { ensureStore, getEntry, listKeys } from "../memory/store.js";
+import { TODO_STORE, type TodoExecutionContext } from "./constants.js";
 
 export interface Todo {
   name: string;
@@ -12,16 +11,16 @@ export interface Todo {
  * Fetch all open todos and return formatted bullet lines.
  * Returns null if there are no todos.
  */
-export function formatTodoList(cwd: string): string | null {
-  ensureDomain(cwd, TODO_DOMAIN);
-  const keysResult = listKeys(cwd, TODO_DOMAIN);
+export function formatTodoList(cwd: string, storeName: string = TODO_STORE): string | null {
+  ensureStore(cwd, storeName);
+  const keysResult = listKeys(cwd, storeName);
   if (keysResult.startsWith("Error") || keysResult.startsWith("Domain")) {
     return null;
   }
   const keys = keysResult.split("\n");
   const lines: string[] = [];
   for (const key of keys) {
-    const raw = getEntry(cwd, TODO_DOMAIN, key);
+    const raw = getEntry(cwd, storeName, key);
     if (raw.startsWith("Error")) continue;
     try {
       const todo = JSON.parse(raw) as Todo;
@@ -34,7 +33,7 @@ export function formatTodoList(cwd: string): string | null {
   return lines.length > 0 ? lines.join("\n") : null;
 }
 
-export async function handleList(ctx: ExtensionCommandContext): Promise<void> {
-  const result = formatTodoList(ctx.cwd);
-  ctx.ui.notify(result ?? "No open todos", "info");
+export async function handleList(tex: TodoExecutionContext): Promise<void> {
+  const result = formatTodoList(tex.cwd, tex.storeName);
+  tex.ui.notify(result ?? "No open todos", "info");
 }

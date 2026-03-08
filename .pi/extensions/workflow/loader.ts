@@ -1,5 +1,6 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { WORKFLOWS_DIR } from "../shared/paths.js";
 import { parse as parseYaml } from "yaml";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { Skill } from "@mariozechner/pi-coding-agent";
@@ -10,7 +11,7 @@ import { listYamlBasenames } from "../shared/yaml-files.js";
 import { getConditionCommand, getStepCommand } from "./commands/registry.js";
 
 export function getWorkflowsDir(cwd: string): string {
-	return join(cwd, ".pi", "workflows");
+	return join(cwd, WORKFLOWS_DIR);
 }
 
 export function listWorkflows(cwd: string): string[] {

@@ -5,12 +5,10 @@ export interface CommandContext {
 	workflowId: string;
 }
 
-export type ConditionCommandResult = { result: "yes" | "no"; explanation: string };
-
 export type ConditionCommandFn = (
 	ctx: CommandContext,
 	args?: Record<string, string>,
-) => Promise<ConditionCommandResult>;
+) => Promise<void>;
 
 export type StepCommandFn = (
 	ctx: CommandContext,
