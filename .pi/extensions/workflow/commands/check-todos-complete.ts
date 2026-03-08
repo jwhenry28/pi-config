@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { registerConditionCommand } from "./registry.js";
 import { readKey, writeKey } from "../../memory/store.js";
+import { getCwd } from "../../shared/cwd.js";
 
 registerConditionCommand("check-todos-complete", async (ctx, args) => {
 	const memoryKey = args?.memoryKey;
@@ -16,7 +17,7 @@ registerConditionCommand("check-todos-complete", async (ctx, args) => {
 
 	let todoPath: string;
 	if (memoryKey) {
-		const value = readKey(ctx.cwd, ctx.workflowId, memoryKey);
+		const value = readKey(getCwd(ctx), ctx.workflowId, memoryKey);
 		if (!value) {
 			throw new Error(`Memory key "${memoryKey}" not found in workflow "${ctx.workflowId}"`);
 		}
@@ -25,7 +26,7 @@ registerConditionCommand("check-todos-complete", async (ctx, args) => {
 		todoPath = todoFilepath!;
 	}
 
-	const fullPath = resolve(ctx.cwd, todoPath);
+	const fullPath = resolve(getCwd(ctx), todoPath);
 	if (!existsSync(fullPath)) {
 		throw new Error(`Todo file not found: ${todoPath}`);
 	}
@@ -38,10 +39,10 @@ registerConditionCommand("check-todos-complete", async (ctx, args) => {
 	const total = unchecked + checked;
 
 	if (unchecked > 0) {
-		writeKey(ctx.cwd, ctx.workflowId, "workflow-condition-result",
+		writeKey(getCwd(ctx), ctx.workflowId, "workflow-condition-result",
 			JSON.stringify({ result: "true", explanation: `${unchecked} of ${total} tasks remaining` }));
 	} else {
-		writeKey(ctx.cwd, ctx.workflowId, "workflow-condition-result",
+		writeKey(getCwd(ctx), ctx.workflowId, "workflow-condition-result",
 			JSON.stringify({ result: "false", explanation: `All ${total} tasks complete` }));
 	}
 });

@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { MEMORY_DIR } from "../shared/paths.js";
 
 // --- Types ---
 
@@ -17,7 +18,7 @@ export interface MemoryFile {
 // --- Path helpers ---
 
 export function memoryDir(cwd: string): string {
-  return join(cwd, ".pi-memory");
+  return join(cwd, MEMORY_DIR);
 }
 
 export function storePath(cwd: string, store: string): string {
@@ -37,6 +38,26 @@ export function validateKey(key: string): string | null {
   if (key === "metadata") return '"metadata" is a reserved key';
   if (key.length === 0) return "Key cannot be empty";
   return null;
+}
+
+// --- Reserved stores ---
+
+const reservedStores = new Map<string, string>(); // name → owner
+
+export function registerReservedStore(cwd: string, store: string, owner: string): void {
+  const err = validateStore(store);
+  if (err) throw new Error(err);
+  reservedStores.set(store, owner);
+  ensureStore(cwd, store);
+}
+
+export function isReservedStore(store: string): string | null {
+  return reservedStores.get(store) ?? null;
+}
+
+/** @internal — for tests only */
+export function clearReservedStores(): void {
+  reservedStores.clear();
 }
 
 // --- Low-level read/write ---
@@ -81,6 +102,8 @@ export function ensureStore(cwd: string, store: string): void {
 export function createStore(cwd: string, store: string): string {
   const err = validateStore(store);
   if (err) return `Error: ${err}`;
+  const owner = isReservedStore(store);
+  if (owner) return `Error: Store "${store}" is reserved by ${owner} and cannot be created manually`;
   if (readStore(cwd, store)) return `Error: Store "${store}" already exists`;
   const ts = now();
   writeStore(cwd, store, {

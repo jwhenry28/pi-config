@@ -1,5 +1,0 @@
-name: Codex
-description: Agentic coding profile using GPT-5.3 where available
-workflow_models:
-  smart: openai-codex/gpt-5.3-codex
-  fast: openai-codex/gpt-5.1-codex-mini

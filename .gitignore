@@ -1,9 +1,6 @@
-# Pi Artifacts
-plans/
-.pi-memory
-
-# Dependencies
+# Extension stuff
 node_modules/
+plans/
 
-# secrets
-.env
+# User configurations (everything user-specific)
+.pi-config/

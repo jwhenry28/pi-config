@@ -1,7 +1,7 @@
 import { readKey } from "../memory/store.js";
 
 // Domain for workflow model overrides
-const WORKFLOW_MODELS_DOMAIN = "workflow_models";
+const WORKFLOW_MODELS_DOMAIN = "pi-config";
 
 // Default model mappings for general aliases
 const DEFAULT_MODELS: Record<string, string> = {

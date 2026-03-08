@@ -63,6 +63,7 @@ There are two mutually exclusive step types: **prompt steps** (LLM-driven) and *
 | `skills` | No | `[]` | Skill names to inject into the step |
 | `modules` | No | — | Module names to activate (merged with workflow-level) |
 | `approval` | No | `false` | Require `/workflow continue` before advancing |
+| `maxExecutions` | No | `10` | Max times this step can be entered via conditional jump (loop guard) |
 | `conditions` | No | — | Post-step conditions to evaluate (see below) |
 
 ### Command Steps
@@ -74,9 +75,28 @@ Run a registered TypeScript function directly — no LLM involved.
 | `name` | Yes | — | Display name |
 | `command` | Yes | — | Registered command name |
 | `args` | No | — | Key-value string arguments passed to the command |
+| `maxExecutions` | No | `10` | Max times this step can be entered via conditional jump (loop guard) |
 | `conditions` | No | — | Post-step conditions to evaluate |
 
 Command steps cannot have `model`, `prompt`, `skills`, `modules`, or `approval`.
+
+## MaxExecutions (Loop Guard)
+
+Each step has an optional `maxExecutions` field (default: `10`). Before a conditional jump targets a step, the workflow engine checks if that step has already been executed `maxExecutions` times. If so, the jump is skipped and the workflow advances sequentially instead.
+
+This prevents infinite loops when conditions always match. Sequential advancement (non-jump) does **not** check `maxExecutions`.
+
+```yaml
+steps:
+  - name: Implement
+    model: general
+    maxExecutions: 5
+    prompt: "Implement the next item"
+    conditions:
+      - command: check-todos-complete
+        args: { memoryKey: plan-todo }
+        jump: Implement  # will stop jumping after 5 executions
+```
 
 ## Model Aliases
 

@@ -1,11 +1,13 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { loadSkills } from "@mariozechner/pi-coding-agent";
+import { getCwd } from "../shared/cwd.js";
 import type { AutocompleteItem } from "@mariozechner/pi-tui";
 import { handleAdd } from "./add.js";
 import { handleList } from "./list.js";
 import { handleDesign, type Skills } from "./design.js";
 import { handleComplete } from "./complete.js";
 import { registerTodoTool } from "./tool.js";
+import { TODO_STORE, type TodoExecutionContext } from "./constants.js";
 
 const SUBCOMMANDS: AutocompleteItem[] = [
   { value: "add", label: "add — Add a new todo item" },
@@ -21,7 +23,7 @@ export default function todoExtension(pi: ExtensionAPI) {
   let allSkills: Skills = [];
 
   pi.on("session_start", async (_event, ctx) => {
-    const result = loadSkills({ cwd: ctx.cwd });
+    const result = loadSkills({ cwd: getCwd(ctx) });
     allSkills = result.skills;
   });
 
@@ -56,18 +58,20 @@ export default function todoExtension(pi: ExtensionAPI) {
         return;
       }
 
+      const tex: TodoExecutionContext = { cwd: getCwd(ctx), storeName: TODO_STORE, ui: ctx.ui };
+
       switch (subcommand) {
         case "add":
-          await handleAdd(parts, ctx);
+          await handleAdd(parts, tex);
           break;
         case "list":
-          await handleList(ctx);
+          await handleList(tex);
           break;
         case "design":
-          await handleDesign(parts, ctx, pi, allSkills);
+          await handleDesign(parts, tex, pi, allSkills);
           break;
         case "complete":
-          await handleComplete(parts, ctx);
+          await handleComplete(parts, tex);
           break;
         default:
           ctx.ui.notify(`Unknown subcommand: ${subcommand}. Use add, list, design, or complete.`, "warning");

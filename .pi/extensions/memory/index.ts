@@ -1,26 +1,52 @@
-import { existsSync, unlinkSync, statSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import type { AutocompleteItem } from "@mariozechner/pi-tui";
+import { getCwd } from "../shared/cwd.js";
 import {
+  addEntry,
+  createStore,
+  deleteEntry,
+  getEntry,
+  isReservedStore,
+  listKeys,
+  listStoreNames,
   memoryDir,
+  readStore,
   storePath,
   validateStore,
-  readStore,
-  listStoreNames,
-  createStore,
-  addEntry,
-  getEntry,
-  listKeys,
-  deleteEntry,
 } from "./store.js";
 
-// --- Extension ---
+const SUBCOMMANDS = ["create", "set", "get", "list", "purge", "stats", "delete", "help"] as const;
 
-export default function (pi: ExtensionAPI) {
-  // --- Tools ---
+type Subcommand = (typeof SUBCOMMANDS)[number];
 
+interface CommandContext {
+  cwd: string;
+  ui: {
+    notify(msg: string, level: "info" | "warning" | "error"): void;
+    confirm(title: string, message?: string): Promise<boolean>;
+  };
+}
+
+export default function memoryExtension(pi: ExtensionAPI) {
+  let cwd = "";
+
+  pi.on("session_start", async (_event, ctx) => {
+    cwd = getCwd(ctx);
+  });
+
+  registerMemoryTools(pi);
+
+  pi.registerCommand("memory", {
+    description: "Manage memory stores: create, set, get, list, purge, stats",
+    getArgumentCompletions: (prefix: string) => getMemoryCompletions(prefix, cwd),
+    handler: async (args, ctx) => handleMemoryCommand(args, { ...ctx, cwd: getCwd(ctx) }),
+  });
+}
+
+function registerMemoryTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "memory_create",
     label: "Memory Create",
@@ -29,8 +55,7 @@ export default function (pi: ExtensionAPI) {
       store: Type.String({ description: "Store identifier" }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = createStore(ctx.cwd, params.store);
-      return { content: [{ type: "text", text: result }], details: {} };
+      return asToolResult(createStore(getCwd(ctx), params.store));
     },
   });
 
@@ -45,8 +70,7 @@ export default function (pi: ExtensionAPI) {
       value: Type.String({ description: "Memory value" }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = addEntry(ctx.cwd, params.store, params.key, params.value);
-      return { content: [{ type: "text", text: result }], details: {} };
+      return asToolResult(addEntry(getCwd(ctx), params.store, params.key, params.value));
     },
   });
 
@@ -59,8 +83,7 @@ export default function (pi: ExtensionAPI) {
       key: Type.String({ description: "Memory key" }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = getEntry(ctx.cwd, params.store, params.key);
-      return { content: [{ type: "text", text: result }], details: {} };
+      return asToolResult(getEntry(getCwd(ctx), params.store, params.key));
     },
   });
 
@@ -73,12 +96,11 @@ export default function (pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       if (!params.store) {
-        const names = listStoreNames(ctx.cwd);
-        if (names.length === 0) return { content: [{ type: "text", text: "No memory stores exist" }], details: {} };
-        return { content: [{ type: "text", text: names.join("\n") }], details: {} };
+        const names = listStoreNames(getCwd(ctx));
+        const text = names.length === 0 ? "No memory stores exist" : names.join("\n");
+        return asToolResult(text);
       }
-      const result = listKeys(ctx.cwd, params.store);
-      return { content: [{ type: "text", text: result }], details: {} };
+      return asToolResult(listKeys(getCwd(ctx), params.store));
     },
   });
 
@@ -91,171 +113,290 @@ export default function (pi: ExtensionAPI) {
       key: Type.String({ description: "Memory key" }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = deleteEntry(ctx.cwd, params.store, params.key);
-      return { content: [{ type: "text", text: result }], details: {} };
+      return asToolResult(deleteEntry(getCwd(ctx), params.store, params.key));
     },
   });
+}
 
-  // --- Command ---
+function asToolResult(text: string): { content: Array<{ type: "text"; text: string }>; details: {} } {
+  return { content: [{ type: "text", text }], details: {} };
+}
 
-  pi.registerCommand("memory", {
-    description: "Manage memory stores: create, set, get, list, purge, stats",
-    getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
-      const subcommands = ["create", "set", "get", "list", "purge", "stats", "delete", "help"];
-      const parts = prefix.split(/\s+/);
-      const cwd = process.cwd();
+function parseSubcommand(args: string): { subcommand: string; parts: string[] } {
+  const parts = args.trim().split(/\s+/).filter(Boolean);
+  return { subcommand: parts[0] ?? "", parts };
+}
 
-      // Typing first word (subcommand)
-      if (parts.length <= 1) {
-        const typed = parts[0] || "";
-        const items = subcommands
-          .filter((s) => s.startsWith(typed))
-          .map((s) => ({ value: s, label: s }));
-        return items.length > 0 ? items : null;
-      }
+async function handleMemoryCommand(args: string, ctx: CommandContext): Promise<void> {
+  const { subcommand, parts } = parseSubcommand(args);
 
-      const sub = parts[0];
-      // Typing second word (store name)
-      if (parts.length === 2) {
-        const typed = parts[1];
-        const names = listStoreNames(cwd);
-        const items = names
-          .filter((n) => n.startsWith(typed))
-          .map((n) => ({ value: `${sub} ${n}`, label: n }));
-        return items.length > 0 ? items : null;
-      }
+  if (!subcommand || subcommand === "help") {
+    ctx.ui.notify(getHelpText(), "info");
+    return;
+  }
 
-      // Typing third word (key) — only for get, set, delete
-      if (parts.length === 3 && ["get", "set", "delete"].includes(sub)) {
-        const storeName = parts[1];
-        const typed = parts[2];
-        const data = readStore(cwd, storeName);
-        if (!data) return null;
-        const keys = Object.keys(data.entries);
-        const items = keys
-          .filter((k) => k.startsWith(typed))
-          .map((k) => ({ value: `${sub} ${storeName} ${k}`, label: k }));
-        return items.length > 0 ? items : null;
-      }
+  switch (subcommand as Subcommand) {
+    case "create":
+      return handleCreate(parts, ctx);
+    case "set":
+      return handleSet(parts, ctx);
+    case "get":
+      return handleGet(parts, ctx);
+    case "list":
+      return handleList(parts, ctx);
+    case "purge":
+      return handlePurge(parts, ctx);
+    case "stats":
+      return handleStats(parts, ctx);
+    case "delete":
+      return handleDelete(parts, ctx);
+    default:
+      ctx.ui.notify(`Unknown subcommand: ${subcommand}. Use ${SUBCOMMANDS.join(", ")}.`, "warning");
+  }
+}
 
-      return null;
-    },
-    handler: async (args, ctx) => {
-      const parts = args.trim().split(/\s+/);
-      const subcommand = parts[0];
+function handleCreate(parts: string[], ctx: CommandContext): void {
+  const store = parts[1];
+  if (!store) {
+    ctx.ui.notify("Usage: /memory create <store>", "warning");
+    return;
+  }
+  notifyResult(ctx, createStore(ctx.cwd, store));
+}
 
-      if (!subcommand || subcommand === "help") {
-        ctx.ui.notify(
-          [
-            "Usage: /memory <subcommand> [args...]",
-            "",
-            "  create <store>              Create a new memory store",
-            "  set <store> <key> <value>   Set a key-value pair in a store",
-            "  get <store> <key>           Retrieve a value by key",
-            "  list [store]                List all stores, or keys in a store",
-            "  purge <store|all>           Delete a store or all stores (with confirmation)",
-            "  stats <store>               Show store metadata and size",
-            "  delete <store> <key>        Delete a key from a store",
-            "  help                        Show this help message",
-            "",
-            "Store names must match [a-zA-Z0-9_-]+.",
-            'Key "metadata" is reserved and cannot be used.',
-          ].join("\n"),
-          "info",
-        );
-        return;
-      }
+function handleSet(parts: string[], ctx: CommandContext): void {
+  const store = parts[1];
+  const key = parts[2];
+  const value = parts.slice(3).join(" ");
+  if (!store || !key || !value) {
+    ctx.ui.notify("Usage: /memory set <store> <key> <value>", "warning");
+    return;
+  }
+  notifyResult(ctx, addEntry(ctx.cwd, store, key, value));
+}
 
-      switch (subcommand) {
-        case "create": {
-          const store = parts[1];
-          if (!store) { ctx.ui.notify("Usage: /memory create <store>", "warning"); return; }
-          ctx.ui.notify(createStore(ctx.cwd, store), "info");
-          break;
-        }
-        case "set": {
-          const store = parts[1];
-          const key = parts[2];
-          const value = parts.slice(3).join(" ");
-          if (!store || !key || !value) { ctx.ui.notify("Usage: /memory set <store> <key> <value>", "warning"); return; }
-          ctx.ui.notify(addEntry(ctx.cwd, store, key, value), "info");
-          break;
-        }
-        case "get": {
-          const store = parts[1];
-          const key = parts[2];
-          if (!store || !key) { ctx.ui.notify("Usage: /memory get <store> <key>", "warning"); return; }
-          const result = getEntry(ctx.cwd, store, key);
-          ctx.ui.notify(result, result.startsWith("Error") ? "error" : "info");
-          break;
-        }
-        case "list": {
-          const store = parts[1];
-          if (!store) {
-            const names = listStoreNames(ctx.cwd);
-            if (names.length === 0) { ctx.ui.notify("No memory stores exist", "info"); return; }
-            ctx.ui.notify(names.join("\n"), "info");
-            return;
-          }
-          const result = listKeys(ctx.cwd, store);
-          ctx.ui.notify(result, result.startsWith("Error") ? "error" : "info");
-          break;
-        }
-        case "purge": {
-          const store = parts[1];
-          if (!store) { ctx.ui.notify("Usage: /memory purge <store|all>", "warning"); return; }
-          if (store === "all") {
-            const dir = memoryDir(ctx.cwd);
-            if (!existsSync(dir)) { ctx.ui.notify("No memory stores exist", "info"); return; }
-            const files = readdirSync(dir).filter(f => f.endsWith(".json"));
-            if (files.length === 0) { ctx.ui.notify("No memory stores exist", "info"); return; }
-            const confirmed = await ctx.ui.confirm(`Delete ALL ${files.length} store(s)?`, "This will permanently delete all memories in every store.");
-            if (!confirmed) { ctx.ui.notify("Cancelled", "info"); return; }
-            for (const f of files) unlinkSync(join(dir, f));
-            ctx.ui.notify(`Purged ${files.length} store(s)`, "info");
-          } else {
-            const storeErr = validateStore(store);
-            if (storeErr) { ctx.ui.notify(`Error: ${storeErr}`, "error"); return; }
-            if (!readStore(ctx.cwd, store)) { ctx.ui.notify(`Error: Store "${store}" does not exist`, "error"); return; }
-            const confirmed = await ctx.ui.confirm(`Delete store "${store}"?`, "This will permanently delete all memories in this store.");
-            if (!confirmed) { ctx.ui.notify("Cancelled", "info"); return; }
-            unlinkSync(storePath(ctx.cwd, store));
-            ctx.ui.notify(`Purged store "${store}"`, "info");
-          }
-          break;
-        }
-        case "stats": {
-          const store = parts[1];
-          if (!store) { ctx.ui.notify("Usage: /memory stats <store>", "warning"); return; }
-          const storeErr = validateStore(store);
-          if (storeErr) { ctx.ui.notify(`Error: ${storeErr}`, "error"); return; }
-          const p = storePath(ctx.cwd, store);
-          if (!existsSync(p)) { ctx.ui.notify(`Error: Store "${store}" does not exist`, "error"); return; }
-          const data = readStore(ctx.cwd, store)!;
-          const keyCount = Object.keys(data.entries).length;
-          const fileSize = statSync(p).size;
-          const lines = [
-            `Store: ${store}`,
-            `Keys: ${keyCount}`,
-            `Size: ${fileSize} bytes`,
-            `Created: ${data.metadata.created}`,
-            `Last updated: ${data.metadata.last_updated}`,
-            `Last visited: ${data.metadata.last_visited}`,
-          ];
-          ctx.ui.notify(lines.join("\n"), "info");
-          break;
-        }
-        case "delete": {
-          const store = parts[1];
-          const key = parts[2];
-          if (!store || !key) { ctx.ui.notify("Usage: /memory delete <store> <key>", "warning"); return; }
-          const result = deleteEntry(ctx.cwd, store, key);
-          ctx.ui.notify(result, result.startsWith("Error") ? "error" : "info");
-          break;
-        }
-        default:
-          ctx.ui.notify(`Unknown subcommand: ${subcommand}. Use create, set, get, list, purge, stats, or delete.`, "warning");
-      }
-    },
-  });
+function handleGet(parts: string[], ctx: CommandContext): void {
+  const store = parts[1];
+  const key = parts[2];
+  if (!store || !key) {
+    ctx.ui.notify("Usage: /memory get <store> <key>", "warning");
+    return;
+  }
+  notifyResult(ctx, getEntry(ctx.cwd, store, key));
+}
+
+function handleList(parts: string[], ctx: CommandContext): void {
+  const store = parts[1];
+  if (!store) {
+    const names = listStoreNames(ctx.cwd);
+    ctx.ui.notify(names.length === 0 ? "No memory stores exist" : names.join("\n"), "info");
+    return;
+  }
+  notifyResult(ctx, listKeys(ctx.cwd, store));
+}
+
+async function handlePurge(parts: string[], ctx: CommandContext): Promise<void> {
+  const target = parts[1];
+  if (!target) {
+    ctx.ui.notify("Usage: /memory purge <store|all>", "warning");
+    return;
+  }
+
+  if (target === "all") {
+    await handlePurgeAll(ctx);
+    return;
+  }
+
+  await handlePurgeOne(target, ctx);
+}
+
+async function handlePurgeAll(ctx: CommandContext): Promise<void> {
+  const dir = memoryDir(ctx.cwd);
+  if (!existsSync(dir)) {
+    ctx.ui.notify("No memory stores exist", "info");
+    return;
+  }
+
+  const allFiles = readdirSync(dir).filter((f) => f.endsWith(".json"));
+  if (allFiles.length === 0) {
+    ctx.ui.notify("No memory stores exist", "info");
+    return;
+  }
+
+  const purgeable = allFiles.filter((f) => !isReservedStore(f.replace(/\.json$/, "")));
+  const skipped = allFiles.length - purgeable.length;
+
+  if (purgeable.length === 0) {
+    ctx.ui.notify("No non-reserved memory stores to purge", "info");
+    return;
+  }
+
+  const confirmMsg =
+    skipped > 0
+      ? `This will permanently delete all memories in ${purgeable.length} store(s). ${skipped} reserved store(s) will be skipped.`
+      : "This will permanently delete all memories in every store.";
+
+  const confirmed = await ctx.ui.confirm(`Delete ${purgeable.length} store(s)?`, confirmMsg);
+  if (!confirmed) {
+    ctx.ui.notify("Cancelled", "info");
+    return;
+  }
+
+  for (const fileName of purgeable) {
+    unlinkSync(join(dir, fileName));
+  }
+
+  const result = skipped > 0
+    ? `Purged ${purgeable.length} store(s) (skipped ${skipped} reserved)`
+    : `Purged ${purgeable.length} store(s)`;
+
+  ctx.ui.notify(result, "info");
+}
+
+async function handlePurgeOne(store: string, ctx: CommandContext): Promise<void> {
+  const storeError = validateStore(store);
+  if (storeError) {
+    ctx.ui.notify(`Error: ${storeError}`, "error");
+    return;
+  }
+
+  if (!readStore(ctx.cwd, store)) {
+    ctx.ui.notify(`Error: Store "${store}" does not exist`, "error");
+    return;
+  }
+
+  const reservedOwner = isReservedStore(store);
+  if (reservedOwner) {
+    ctx.ui.notify(`Error: Store "${store}" is reserved by ${reservedOwner} and cannot be purged`, "error");
+    return;
+  }
+
+  const confirmed = await ctx.ui.confirm(
+    `Delete store "${store}"?`,
+    "This will permanently delete all memories in this store.",
+  );
+  if (!confirmed) {
+    ctx.ui.notify("Cancelled", "info");
+    return;
+  }
+
+  unlinkSync(storePath(ctx.cwd, store));
+  ctx.ui.notify(`Purged store "${store}"`, "info");
+}
+
+function handleStats(parts: string[], ctx: CommandContext): void {
+  const store = parts[1];
+  if (!store) {
+    ctx.ui.notify("Usage: /memory stats <store>", "warning");
+    return;
+  }
+
+  const storeError = validateStore(store);
+  if (storeError) {
+    ctx.ui.notify(`Error: ${storeError}`, "error");
+    return;
+  }
+
+  const path = storePath(ctx.cwd, store);
+  if (!existsSync(path)) {
+    ctx.ui.notify(`Error: Store "${store}" does not exist`, "error");
+    return;
+  }
+
+  const data = readStore(ctx.cwd, store)!;
+  const lines = [
+    `Store: ${store}`,
+    `Keys: ${Object.keys(data.entries).length}`,
+    `Size: ${statSync(path).size} bytes`,
+    `Created: ${data.metadata.created}`,
+    `Last updated: ${data.metadata.last_updated}`,
+    `Last visited: ${data.metadata.last_visited}`,
+  ];
+  ctx.ui.notify(lines.join("\n"), "info");
+}
+
+function handleDelete(parts: string[], ctx: CommandContext): void {
+  const store = parts[1];
+  const key = parts[2];
+  if (!store || !key) {
+    ctx.ui.notify("Usage: /memory delete <store> <key>", "warning");
+    return;
+  }
+  notifyResult(ctx, deleteEntry(ctx.cwd, store, key));
+}
+
+function notifyResult(ctx: CommandContext, result: string): void {
+  ctx.ui.notify(result, result.startsWith("Error") ? "error" : "info");
+}
+
+function getHelpText(): string {
+  return [
+    "Usage: /memory <subcommand> [args...]",
+    "",
+    "  create <store>              Create a new memory store",
+    "  set <store> <key> <value>   Set a key-value pair in a store",
+    "  get <store> <key>           Retrieve a value by key",
+    "  list [store]                List all stores, or keys in a store",
+    "  purge <store|all>           Delete a store or all stores (with confirmation)",
+    "  stats <store>               Show store metadata and size",
+    "  delete <store> <key>        Delete a key from a store",
+    "  help                        Show this help message",
+    "",
+    "Store names must match [a-zA-Z0-9_-]+.",
+    'Key "metadata" is reserved and cannot be used.',
+  ].join("\n");
+}
+
+function getMemoryCompletions(prefix: string, cwd: string): AutocompleteItem[] | null {
+  const hasTrailingSpace = prefix.endsWith(" ");
+  const trimmed = prefix.trim();
+
+  if (!trimmed) {
+    return SUBCOMMANDS.map((value) => ({ value, label: value }));
+  }
+
+  const parts = trimmed.split(/\s+/);
+  const subcommand = parts[0] ?? "";
+
+  if (parts.length === 1 && !hasTrailingSpace) {
+    const matches = SUBCOMMANDS.filter((s) => s.startsWith(subcommand));
+    return matches.length > 0 ? matches.map((value) => ({ value, label: value })) : null;
+  }
+
+  if (parts.length === 1 && hasTrailingSpace) {
+    const stores = listStoreNames(cwd);
+    return stores.length > 0
+      ? stores.map((store) => ({ value: `${subcommand} ${store}`, label: store }))
+      : null;
+  }
+
+  if (parts.length === 2 && !hasTrailingSpace) {
+    const storePrefix = parts[1] ?? "";
+    const stores = listStoreNames(cwd)
+      .filter((store) => store.startsWith(storePrefix))
+      .map((store) => ({ value: `${subcommand} ${store}`, label: store }));
+    return stores.length > 0 ? stores : null;
+  }
+
+  if (["get", "set", "delete"].includes(subcommand) && parts.length === 3 && !hasTrailingSpace) {
+    const storeName = parts[1] ?? "";
+    const keyPrefix = parts[2] ?? "";
+    return completeKeys(subcommand, cwd, storeName, keyPrefix);
+  }
+
+  if (["get", "set", "delete"].includes(subcommand) && parts.length === 2 && hasTrailingSpace) {
+    const storeName = parts[1] ?? "";
+    return completeKeys(subcommand, cwd, storeName, "");
+  }
+
+  return null;
+}
+
+function completeKeys(subcommand: string, cwd: string, storeName: string, keyPrefix: string): AutocompleteItem[] | null {
+  const data = readStore(cwd, storeName);
+  if (!data) return null;
+  const items = Object.keys(data.entries)
+    .filter((key) => key.startsWith(keyPrefix))
+    .map((key) => ({ value: `${subcommand} ${storeName} ${key}`, label: key }));
+  return items.length > 0 ? items : null;
 }

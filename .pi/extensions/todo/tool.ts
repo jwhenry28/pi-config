@@ -1,7 +1,16 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { moduleTag } from "../modules/api.js";
+import { getCwd } from "../shared/cwd.js";
+import { moduleTag } from "../plugin/modules/api.js";
 import { formatTodoList } from "./list.js";
+
+/**
+ * Core logic for the todo_list tool. Exported for testability.
+ */
+export function executeTodoList(cwd: string, storeName?: string): { content: Array<{ type: "text"; text: string }> } {
+  const result = formatTodoList(cwd, storeName);
+  return { content: [{ type: "text" as const, text: result ?? "No open todos." }] };
+}
 
 export function registerTodoTool(pi: ExtensionAPI) {
   pi.registerTool(
@@ -14,12 +23,7 @@ export function registerTodoTool(pi: ExtensionAPI) {
       async execute(_toolCallId, _params, signal, _onUpdate, ctx) {
         if (signal?.aborted)
           return { content: [{ type: "text" as const, text: "Cancelled" }] };
-        const result = formatTodoList(ctx.cwd);
-        return {
-          content: [
-            { type: "text" as const, text: result ?? "No open todos." },
-          ],
-        };
+        return executeTodoList(getCwd(ctx));
       },
     }),
   );

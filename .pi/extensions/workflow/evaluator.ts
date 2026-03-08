@@ -12,6 +12,18 @@ import {
 	type ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 import type { PromptCondition, CommandCondition } from "./types.js";
+
+/** Global override for testing — replaces the streamFn on condition evaluation sessions.
+ *  Uses globalThis to ensure same instance across module boundaries (vitest + dynamic imports). */
+const _global = globalThis as any;
+
+export function setConditionStreamFnOverride(fn: ((model: any, context: any, options?: any) => any) | undefined): void {
+	_global.__pi_conditionStreamFnOverride = fn;
+}
+
+function getConditionStreamFnOverride(): ((model: any, context: any, options?: any) => any) | undefined {
+	return _global.__pi_conditionStreamFnOverride;
+}
 import { resolvePrompt } from "./loader.js";
 import { resolveModelAlias, parseModelRef } from "./models.js";
 import { getConditionCommand } from "./commands/registry.js";
@@ -104,6 +116,11 @@ export async function evaluateCondition(
 		settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
 		modelRegistry: ctx.modelRegistry,
 	});
+	// Apply test override if set
+	const streamOverride = getConditionStreamFnOverride();
+	if (streamOverride) {
+		session.agent.streamFn = streamOverride;
+	}
 
 	try {
 		await session.prompt(resolvedPrompt);

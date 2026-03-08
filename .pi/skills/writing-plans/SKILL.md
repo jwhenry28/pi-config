@@ -8,7 +8,7 @@ module: development
 
 ## Overview
 
-Write comprehensive implementation plans assuming the engineer has zero context for our codebase and questionable taste. Document everything they need to know: which files to touch for each task, code, testing, docs they might need to check, how to test it. Give them the whole plan as bite-sized tasks. DRY. YAGNI. TDD. Frequent commits.
+Write comprehensive implementation plans assuming the engineer has zero context for our codebase and questionable taste. Document everything they need to know: which files to touch for each task, code, testing, docs they might need to check, how to test it. Give them the whole plan as bite-sized tasks. DRY. YAGNI. TDD.
 
 Assume they are a skilled developer, but know almost nothing about our toolset or problem domain. Assume they don't know good test design very well.
 
@@ -19,6 +19,22 @@ Assume they are a skilled developer, but know almost nothing about our toolset o
 ## Input
 
 **The skill takes ONE required argument: the path to the design document.**
+
+## Workflow Memory (Cross-Step State)
+
+When this skill is used inside a workflow, steps can share state through workflow memory.
+
+- Memory domain/store: workflow ID from the `Workflow: ...` header in the step message
+- Useful keys used by existing workflows:
+  - `design-doc` → path to design doc
+  - `plan` → path to plan directory
+  - `plan-todo` → path to `todo.md`
+- Agent tools:
+  - `memory_add` to store values for later steps
+  - `memory_get` to read values saved by earlier steps
+  - `memory_list` to inspect available keys
+
+When writing plans, prefer tasks with explicit handoff outputs when later tasks depend on prior decisions. If useful, include a final step in a task to save those outputs into memory with clear key names.
 
 Example: `/write-plan plans/feature-name/design.md`
 
@@ -85,7 +101,6 @@ For each task, create `plans/<feature-name>/taskN-<descriptive-name>.md`
 - "Run it to make sure it fails" - step
 - "Implement the minimal code to make the test pass" - step
 - "Run the tests and make sure they pass" - step
-- "Commit" - step
 
 ## Overview File Structure
 
@@ -150,13 +165,6 @@ def function(input):
 Run: `pytest tests/path/test.py::test_name -v`
 Expected: PASS
 
-**Step 5: Commit**
-
-```bash
-git add tests/path/test.py src/path/file.py
-git commit -m "feat: add specific feature"
-```
-
 ```
 
 ## Remember
@@ -164,7 +172,8 @@ git commit -m "feat: add specific feature"
 - Complete code in plan (not "add validation")
 - Exact commands with expected output
 - Reference relevant skills with @ syntax
-- DRY, YAGNI, TDD, frequent commits
+- If workflow memory is available, define/store handoff outputs when later tasks need them
+- DRY, YAGNI, TDD
 
 ## Red Flags - STOP and Fix Structure
 

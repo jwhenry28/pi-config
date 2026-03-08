@@ -14,11 +14,12 @@ import { evaluateCondition, evaluateCommandCondition } from "./evaluator.js";
 import { resolveModelAlias, parseModelRef } from "./models.js";
 import { getStepCommand } from "./commands/registry.js";
 import { readKey, deleteEntry } from "../memory/store.js";
+import { MEMORY_DIR } from "../shared/paths.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function createMemoryDomain(cwd: string, domain: string): void {
-  const dir = join(cwd, ".pi-memory");
+  const dir = join(cwd, MEMORY_DIR);
   const filePath = join(dir, `${domain}.json`);
   if (existsSync(filePath)) return;
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -337,7 +338,6 @@ export async function runCurrentStep(
   if (state.active.currentStepIndex === 0) {
     createMemoryDomain(state.cwd, state.active.id);
   }
-
   if (isCommandStep(step)) {
     const fn = getStepCommand(step.command);
     if (!fn) {

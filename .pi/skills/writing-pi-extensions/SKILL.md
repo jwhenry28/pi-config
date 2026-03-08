@@ -1,117 +1,259 @@
 ---
 name: writing-pi-extensions
-description: Use when creating, modifying, or debugging extensions for the pi agentic coding framework - provides the correct API shape, imports, event system, tool registration, command registration, state management, and common patterns that differ significantly from what you might guess
-module: pi-development
+description: Use when creating, modifying, or debugging pi extensions - covers tools, events, commands, UI, state management, and custom rendering
 ---
 
-# Writing pi Extensions
+# Writing Pi Extensions
 
-## Overview
+Extensions are TypeScript modules that extend pi. They export a default function receiving `ExtensionAPI`.
 
-pi extensions are TypeScript modules that extend the pi coding agent. They use a **function-based API** where you export a default function receiving `ExtensionAPI`. Everything is wrong if you use class-based or object-based patterns.
-
-**REQUIRED SUB-SKILLS:** 
-- Extension structure & common mistakes: see `api-shape-and-imports`
-- Tool/command registration: see `registering-tools-and-commands`
-- Event handling system: see `extension-events`
-- Session state management: see `extension-state-management`
-- Testing with RPC: see `testing-pi-extensions-rpc`
-
-## Critical: The Correct Shape
+## Quick Start
 
 ```typescript
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 export default function (pi: ExtensionAPI) {
-  // ALL registration happens here via pi.* methods
+  pi.on("session_start", async (_event, ctx) => {
+    ctx.ui.notify("Loaded!", "info");
+  });
 }
 ```
 
-**There is no other shape.** No `Extension` class, no object with `name`/`version`, no `@anthropic/*` packages.
+## Extension Locations
 
-## Extension File Locations
+| Location | Scope |
+| --- | --- |
+| `~/.pi/agent/extensions/*.ts` | Global |
+| `~/.pi/agent/extensions/*/index.ts` | Global (directory) |
+| `.pi/extensions/*.ts` | Project-local |
+| `.pi/extensions/*/index.ts` | Project-local (directory) |
 
-| Location                            | Scope                        |
-| ----------------------------------- | ---------------------------- |
-| `~/.pi/agent/extensions/*.ts`       | Global (all projects)        |
-| `~/.pi/agent/extensions/*/index.ts` | Global (subdirectory)        |
-| `.pi/extensions/*.ts`               | Project-local                |
-| `.pi/extensions/*/index.ts`         | Project-local (subdirectory) |
+Test with `pi -e ./my-extension.ts`. Use auto-discovered locations for `/reload` support.
 
-Test with: `pi -e ./my-extension.ts`
+## Available Imports
 
-Auto-discovered extensions support `/reload` for hot-reloading.
+| Package | Purpose |
+| --- | --- |
+| `@mariozechner/pi-coding-agent` | Extension types, events, tool helpers |
+| `@sinclair/typebox` | Schema definitions (`Type.Object`, etc.) |
+| `@mariozechner/pi-ai` | `StringEnum` (required for Google-compatible enums) |
+| `@mariozechner/pi-tui` | TUI components (`Text`, `Component`, `matchesKey`) |
 
-## Registering Tools Under a Module
+npm deps work — add `package.json` next to extension, run `npm install`.
 
-This project has a module system (`.pi/extensions/modules/`) that groups tools and skills into named modules that can be shown/hidden via `/module show <name>` and `/module hide <name>`. When a module is hidden, its tools are deactivated and its skills are filtered from the system prompt.
+## Core Capabilities
 
-### Tagging a tool to a module
-
-Import `moduleTag` from the modules extension and wrap your tool definition:
+### Registering Tools
 
 ```typescript
-import { moduleTag } from "./modules/api.js";
-// For extensions outside .pi/extensions/, adjust the import path accordingly.
+import { Type } from "@sinclair/typebox";
+import { StringEnum } from "@mariozechner/pi-ai";
 
-export default function (pi: ExtensionAPI) {
-  pi.registerTool(moduleTag(pi, "my-module", {
-    name: "my_tool",
-    label: "My Tool",
-    description: "...",
-    parameters: Type.Object({ /* ... */ }),
-    async execute(toolCallId, params, signal, onUpdate, ctx) {
-      // ...
-    },
-  }));
+pi.registerTool({
+  name: "my_tool",
+  label: "My Tool",
+  description: "What this tool does",
+  parameters: Type.Object({
+    action: StringEnum(["list", "add"] as const),
+    text: Type.Optional(Type.String()),
+  }),
+  async execute(toolCallId, params, signal, onUpdate, ctx) {
+    onUpdate?.({ content: [{ type: "text", text: "Working..." }] });
+    return {
+      content: [{ type: "text", text: "Done" }],
+      details: { result: "..." },
+    };
+  },
+});
+```
+
+**Important:** Use `StringEnum` from `@mariozechner/pi-ai` for string enums — `Type.Union`/`Type.Literal` doesn't work with Google's API.
+
+### Registering Commands
+
+```typescript
+pi.registerCommand("stats", {
+  description: "Show session statistics",
+  handler: async (args, ctx) => {
+    const count = ctx.sessionManager.getEntries().length;
+    ctx.ui.notify(`${count} entries`, "info");
+  },
+});
+```
+
+Commands receive `ExtensionCommandContext` which adds `waitForIdle()`, `newSession()`, `fork()`, `navigateTree()`, and `reload()`.
+
+#### Command Autocompletion
+
+Add `getArgumentCompletions` to provide tab-completion for command arguments. It receives the text after the command name and returns `AutocompleteItem[]` or `null`:
+
+```typescript
+import type { AutocompleteItem } from "@mariozechner/pi-tui";
+
+pi.registerCommand("commands", {
+  description: "List available slash commands",
+  getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
+    const options = ["extension", "prompt", "skill"];
+    const filtered = options.filter((s) => s.startsWith(prefix));
+    return filtered.length > 0
+      ? filtered.map((s) => ({ value: s, label: s, description: `Filter by ${s}` }))
+      : null;
+  },
+  handler: async (args, ctx) => { /* ... */ },
+});
+```
+
+`AutocompleteItem` has: `value` (inserted text), `label` (display text), and optional `description`.
+
+### Subscribing to Events
+
+```typescript
+pi.on("tool_call", async (event, ctx) => {
+  if (event.toolName === "bash" && event.input.command?.includes("rm -rf")) {
+    return { block: true, reason: "Dangerous command" };
+  }
+});
+```
+
+### Sending Messages
+
+```typescript
+// Custom message (for context injection)
+pi.sendMessage({ customType: "my-ext", content: "Info", display: true }, { deliverAs: "steer" });
+
+// User message (triggers a turn)
+pi.sendUserMessage("Do something");
+```
+
+Delivery modes: `"steer"` (interrupts), `"followUp"` (after current turn), `"nextTurn"` (queued).
+
+## Event Lifecycle
+
+```
+session_start → input → before_agent_start → agent_start
+  → turn_start → context → [tool_call → tool_result]* → turn_end
+  → agent_end → session_shutdown
+```
+
+For the full event list and typed signatures, see [references/events.md](references/events.md).
+
+## ExtensionContext (`ctx`)
+
+Every handler receives `ctx` with:
+
+- `ctx.ui` — Dialogs (`select`, `confirm`, `input`, `editor`), notifications, widgets, status
+- `ctx.hasUI` — `false` in print/JSON mode
+- `ctx.cwd` — Working directory
+- `ctx.sessionManager` — Read-only session state (`getEntries()`, `getBranch()`, `getLeafId()`)
+- `ctx.modelRegistry` / `ctx.model` — Model access
+- `ctx.isIdle()` / `ctx.abort()` — Control flow
+- `ctx.shutdown()` — Graceful shutdown (deferred until idle)
+- `ctx.getContextUsage()` — Token usage
+- `ctx.compact()` — Trigger compaction
+- `ctx.getSystemPrompt()` — Current system prompt
+
+## State Management
+
+Store state in tool result `details` for proper branching support. Reconstruct from session on `session_start`:
+
+```typescript
+let items: string[] = [];
+
+pi.on("session_start", async (_event, ctx) => {
+  items = [];
+  for (const entry of ctx.sessionManager.getBranch()) {
+    if (entry.type === "message" && entry.message.role === "toolResult" && entry.message.toolName === "my_tool") {
+      items = entry.message.details?.items ?? [];
+    }
+  }
+});
+```
+
+Use `pi.appendEntry("my-state", data)` for non-LLM-context persistence.
+
+## UI Methods
+
+```typescript
+// Dialogs
+const choice = await ctx.ui.select("Pick:", ["A", "B", "C"]);
+const ok = await ctx.ui.confirm("Sure?", "Details");
+const name = await ctx.ui.input("Name:");
+
+// Persistent UI
+ctx.ui.setStatus("my-ext", "Processing...");
+ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"]);
+ctx.ui.setWidget("my-widget", lines, { placement: "belowEditor" });
+ctx.ui.notify("Done!", "info");
+
+// Complex custom UI
+const result = await ctx.ui.custom<boolean>((tui, theme, keybindings, done) => {
+  const text = new Text("Press Enter or Escape", 1, 1);
+  text.onKey = (key) => {
+    if (key === "return") done(true);
+    if (key === "escape") done(false);
+    return true;
+  };
+  return text;
+});
+```
+
+Dialogs support `timeout` option for auto-dismiss with countdown.
+
+## Output Truncation
+
+Tools **must** truncate output. Use built-in utilities:
+
+```typescript
+import { truncateHead, truncateTail, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from "@mariozechner/pi-coding-agent";
+
+const truncation = truncateHead(output, { maxLines: DEFAULT_MAX_LINES, maxBytes: DEFAULT_MAX_BYTES });
+```
+
+Limit: 50KB / 2000 lines. Always inform LLM when truncated.
+
+## Custom Rendering
+
+Tools can define `renderCall` and `renderResult` for TUI display:
+
+```typescript
+import { Text } from "@mariozechner/pi-tui";
+
+renderCall(args, theme) {
+  return new Text(theme.fg("toolTitle", theme.bold("my_tool ")) + theme.fg("muted", args.action), 0, 0);
+},
+renderResult(result, { expanded, isPartial }, theme) {
+  if (isPartial) return new Text(theme.fg("warning", "Processing..."), 0, 0);
+  return new Text(theme.fg("success", "✓ Done"), 0, 0);
 }
 ```
 
-`moduleTag(pi, moduleName, toolDef)` emits a `"module:tool-tag"` event on the shared event bus (`pi.events`) and returns the tool definition unchanged. The modules extension listens for these events to discover tool-to-module associations.
+Use `Text` with padding `(0, 0)` — the wrapping Box handles padding.
 
-### How it works under the hood
+## Additional API
 
-- `moduleTag` fires synchronously during extension loading, so by the time the modules extension initializes, all tool tags are already collected.
-- A module-level `Map` is **not** shared between extensions because jiti loads each extension with `moduleCache: false` (isolated module instances). The shared event bus (`pi.events`) is the correct cross-extension communication channel.
-- Skills declare their module via `module: <name>` in their `SKILL.md` YAML frontmatter. Tools use `moduleTag()`.
+- `pi.registerShortcut("ctrl+shift+p", { handler })` — Keyboard shortcuts
+- `pi.registerFlag("plan", { type: "boolean" })` — CLI flags
+- `pi.exec("git", ["status"])` — Shell commands
+- `pi.getActiveTools()` / `pi.setActiveTools(names)` — Manage tools
+- `pi.setModel(model)` — Change model
+- `pi.events` — Inter-extension event bus
+- `pi.registerProvider("name", config)` — Custom model providers
+- `pi.registerMessageRenderer("type", renderer)` — Custom message rendering
 
-### Associating a skill with a module
+## Mode Behavior
 
-In the skill's `SKILL.md`, add a `module` field to the YAML frontmatter:
+| Mode | UI | Notes |
+| --- | --- | --- |
+| Interactive | Full TUI | Normal |
+| RPC (`--mode rpc`) | JSON protocol | Host handles UI |
+| JSON (`--mode json`) | No-op | Event stream |
+| Print (`-p`) | No-op | Can't prompt |
 
-```yaml
----
-name: my-skill
-description: ...
-module: my-module
----
-```
+Check `ctx.hasUI` before using UI methods in non-interactive modes.
 
-When the module is hidden, the skill's `<skill>` block is stripped from the system prompt.
+## Detailed References
 
-## Other API Methods
-
-| Method                                             | Purpose                                                                         |
-| -------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `pi.sendMessage(msg, opts)`                        | Inject message into session. `deliverAs`: `"steer"`, `"followUp"`, `"nextTurn"` |
-| `pi.sendUserMessage(text, opts)`                   | Send as user message. Always triggers turn.                                     |
-| `pi.appendEntry(type, data)`                       | Persist state outside LLM context                                               |
-| `pi.registerShortcut(key, opts)`                   | Register keyboard shortcut                                                      |
-| `pi.registerFlag(name, opts)`                      | Register CLI flag                                                               |
-| `pi.getActiveTools()` / `pi.setActiveTools(names)` | Manage active tools                                                             |
-| `pi.setModel(model)`                               | Switch model                                                                    |
-| `pi.exec(cmd, args, opts)`                         | Execute shell command                                                           |
-| `pi.events`                                        | Shared event bus between extensions                                             |
-| `pi.registerProvider(name, config)`                | Register custom model provider                                                  |
-| `pi.registerMessageRenderer(type, fn)`             | Custom message rendering                                                        |
-
-## Quick Reference: Full Extension Example
-
-See the pi examples directory for working implementations. Key examples:
-
-- `hello.ts` - Minimal tool
-- `todo.ts` - Stateful tool with session branching
-- `permission-gate.ts` - Blocking dangerous commands
-- `pirate.ts` - System prompt modification
-- `status-line.ts` - Footer status
-- `plan-mode/` - Complex multi-feature extension
+- [references/events.md](references/events.md) — Full event list with typed signatures and return values
+- [references/examples.md](references/examples.md) — Categorized example index with key APIs used
+- [references/sdk-ai.md](references/sdk-ai.md) — `@mariozechner/pi-ai` SDK: unified LLM API, models, providers, streaming, tools, thinking
+- [references/sdk-agent.md](references/sdk-agent.md) — `@mariozechner/pi-agent-core` SDK: stateful agent, event flow, steering, custom message types
