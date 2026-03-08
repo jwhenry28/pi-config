@@ -1,6 +1,7 @@
 ---
 name: writing-workflows
 description: Writing workflow YAML files for the /workflow extension - covers schema, step configuration, prompt references, conditions, commands, and execution model
+module: general
 ---
 
 # Writing Workflows

@@ -1,6 +1,7 @@
 ---
 name: knowing-clean-code
 description: Use when writing or reviewing code - covers stepdown rule, meaningful naming, and managing complexity through function extraction
+module: development
 ---
 
 # Clean Code Principles

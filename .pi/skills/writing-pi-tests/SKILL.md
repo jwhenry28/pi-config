@@ -1,6 +1,7 @@
 ---
 name: writing-pi-tests
 description: Use when writing or reviewing unit tests for pi extensions — covers test utilities, store isolation, mocking ExecutionContext and ExtensionAPI, and vitest patterns
+module: pi-development
 ---
 
 # Writing Pi Extension Tests

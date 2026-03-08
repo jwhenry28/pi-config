@@ -10,7 +10,7 @@ fi
 
 # Resolve paths
 repo="$(cd "$repo" && pwd)"
-pi_config_dir="$(cd "$(dirname "$0")" && pwd)"
+pi_config_dir="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Create .pi symlink
 ln -sfn "$pi_config_dir/.pi" "$repo/.pi"

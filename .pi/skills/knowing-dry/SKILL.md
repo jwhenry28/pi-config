@@ -1,6 +1,7 @@
 ---
 name: knowing-dry
 description: Use when writing new code, reviewing for duplication, or refactoring repeated patterns - applies Rule of Three, extract patterns, and knows when NOT to DRY
+module: development
 ---
 
 # DRY Refactoring

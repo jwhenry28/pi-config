@@ -1,6 +1,7 @@
 ---
 name: skill-manager
 description: Use when writing or reviewing pi skills - covers formatting, structure, progressive disclosure, and authoring best practices
+module: general
 ---
 
 # Writing Effective Skills

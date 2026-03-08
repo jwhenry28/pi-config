@@ -1,6 +1,7 @@
 ---
 name: knowing-yagni
 description: Use when implementing changes - enforces strict scope discipline, prevents feature creep, unsolicited improvements, and over-engineering
+module: development
 ---
 
 # Knowing YAGNI (You Aren't Gonna Need It)
