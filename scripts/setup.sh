@@ -13,8 +13,8 @@ repo="$(cd "$repo" && pwd)"
 pi_config_dir="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Create .pi symlink
-ln -sfn "$pi_config_dir/.pi" "$repo/.pi"
-echo "Created symlink: $repo/.pi -> $pi_config_dir/.pi"
+ln -sfn "$pi_config_dir" "$repo/.pi"
+echo "Created symlink: $repo/.pi -> $pi_config_dir"
 
 # Update .gitignore
 gitignore="$repo/.gitignore"
@@ -24,7 +24,6 @@ entries=(
   "# pi-config"
   ".pi"
   ".pi-config/*"
-  "!.pi-config/configs"
 )
 
 for entry in "${entries[@]}"; do
