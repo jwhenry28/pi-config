@@ -148,7 +148,7 @@ export default function modulesExtension(pi: ExtensionAPI) {
   // --- Slash command ---
 
   pi.registerCommand("module", {
-    description: "Manage modules: show, hide, list",
+    description: "Manage modules: enable, disable, list",
     getArgumentCompletions: (prefix) => {
       const parts = prefix.split(/\s+/);
 

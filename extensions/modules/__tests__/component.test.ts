@@ -200,8 +200,8 @@ describe("modules extension (component)", () => {
     await test.mockAgentResponse({ text: "ok" });
     await test.waitForIdle();
 
-    const hiddenContext = capturedContexts[0];
-    const toolNames = (hiddenContext.tools ?? []).map((t: any) => t.name);
+    const disabledContext = capturedContexts[0];
+    const toolNames = (disabledContext.tools ?? []).map((t: any) => t.name);
     expect(toolNames).not.toContain("test_mod_tool");
 
     // Enable the module — should restore the tool
@@ -212,8 +212,8 @@ describe("modules extension (component)", () => {
     await test.mockAgentResponse({ text: "ok" });
     await test.waitForIdle();
 
-    const shownContext = capturedContexts[0];
-    const shownToolNames = (shownContext.tools ?? []).map((t: any) => t.name);
-    expect(shownToolNames).toContain("test_mod_tool");
+    const enabledContext = capturedContexts[0];
+    const enabledToolNames = (enabledContext.tools ?? []).map((t: any) => t.name);
+    expect(enabledToolNames).toContain("test_mod_tool");
   });
 });
