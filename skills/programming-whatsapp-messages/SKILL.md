@@ -1,6 +1,7 @@
 ---
 name: programming-whatsapp-messages
 description: Use when building WhatsApp messaging features, sending messages via Cloud API, handling webhooks, or working with message templates - covers WhatsApp Business Platform APIs and patterns
+module: catholic-founders
 ---
 
 # Programming WhatsApp Messages
