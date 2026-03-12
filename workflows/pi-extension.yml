@@ -2,7 +2,7 @@ name: Extension Implementation
 steps:
   - name: Brainstorm
     model: smart
-    prompt: "@.pi/prompts/development/brainstorm.md"
+    prompt: "@development/brainstorm.md"
     skills:
       - brainstorming
       - writing-pi-extensions
@@ -10,7 +10,7 @@ steps:
 
   - name: Plan
     model: smart
-    prompt: "@.pi/prompts/development/plan.md"
+    prompt: "@development/plan.md"
     skills:
       - writing-plans
       - writing-pi-tests
@@ -38,7 +38,7 @@ steps:
 
   - name: Implement
     model: smart
-    prompt: "@.pi/prompts/development/implement.md"
+    prompt: "@development/implement.md"
     skills:
       - executing-plans
     conditions:
