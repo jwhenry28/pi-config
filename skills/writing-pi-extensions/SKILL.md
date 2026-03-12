@@ -1,6 +1,7 @@
 ---
 name: writing-pi-extensions
 description: Use when creating, modifying, or debugging pi extensions - covers tools, events, commands, UI, state management, and custom rendering
+module: pi-development
 ---
 
 # Writing Pi Extensions
