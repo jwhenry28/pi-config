@@ -1,18 +1,13 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import type { AutocompleteItem } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
-import { parseDuration } from "./parse.js";
-import { createTimer, cancelTimer, listTimers, clearAll } from "./state.js";
+import { clearAll, listTimers } from "./state.js";
+import { handleTimerCommand } from "./commands.js";
+import { executeSetTimer, executeListTimers, executeCancelTimer } from "./tools.js";
 
-// ── Interfaces ────────────────────────────────────────────────────
-
-interface TimerUI {
-  notify: (msg: string, level: string) => void;
-}
-
-interface TimerPi {
-  sendUserMessage: (content: string, options?: { deliverAs?: "steer" | "followUp" }) => void;
-}
+// Re-export for tests
+export { handleTimerCommand, parseSetArgs, type ParsedSetArgs } from "./commands.js";
+export { executeSetTimer, executeListTimers, executeCancelTimer } from "./tools.js";
 
 // ── Extension registration ────────────────────────────────────────
 
@@ -42,184 +37,31 @@ export default function timerExtension(pi: ExtensionAPI) {
       recurring: Type.Optional(Type.Boolean({ description: "If true, fire repeatedly (default: false)" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      return executeSetTimer(params as SetTimerParams, ctx.ui, pi);
-    },
-  });
-}
-
-// ── Command handler (exported for unit tests) ─────────────────────
-
-export function handleTimerCommand(args: string, ui: TimerUI, pi: TimerPi): void {
-  const parts = args.trim().split(/\s+/).filter(Boolean);
-  const subcommand = parts[0] ?? "";
-
-  if (!subcommand || subcommand === "help") {
-    showHelp(ui);
-    return;
-  }
-
-  switch (subcommand) {
-    case "set":
-      handleSet(parts, ui, pi);
-      break;
-    case "list":
-      handleList(ui);
-      break;
-    case "cancel":
-      handleCancel(parts, ui);
-      break;
-    default:
-      ui.notify(`Unknown subcommand: ${subcommand}. Use set, list, cancel, or help.`, "warning");
-  }
-}
-
-// ── Tool execute function (exported for tests) ───────────────────
-
-interface SetTimerParams {
-  duration: string;
-  prompt: string;
-  recurring?: boolean;
-}
-
-export function executeSetTimer(
-  params: SetTimerParams,
-  ui: TimerUI,
-  pi: TimerPi,
-): { content: Array<{ type: "text"; text: string }> } {
-  const result = setTimerFromInput(params.duration, params.recurring ?? false, params.prompt, ui, pi);
-  if (!result.ok) {
-    return { content: [{ type: "text" as const, text: result.error }] };
-  }
-  return {
-    content: [{ type: "text" as const, text: `Timer ${result.id} set (${result.typeLabel}, ${result.display}): ${params.prompt}` }],
-  };
-}
-
-// ── Shared timer creation ─────────────────────────────────────────
-
-interface SetTimerSuccess {
-  ok: true;
-  id: string;
-  typeLabel: string;
-  display: string;
-}
-
-interface SetTimerFailure {
-  ok: false;
-  error: string;
-}
-
-function setTimerFromInput(
-  durationStr: string,
-  recurring: boolean,
-  prompt: string,
-  ui: TimerUI,
-  pi: TimerPi,
-): SetTimerSuccess | SetTimerFailure {
-  const duration = parseDuration(durationStr);
-  if (!duration) {
-    return { ok: false, error: `Invalid duration: "${durationStr}". Use e.g. 5m, 60m, 2h.` };
-  }
-
-  const entry = createTimer({
-    prompt,
-    intervalMs: duration.ms,
-    durationStr: duration.display,
-    recurring,
-    onFire: (id) => {
-      ui.notify(`⏱ Timer ${id} fired`, "info");
-      pi.sendUserMessage(prompt, { deliverAs: "followUp" });
+      return executeSetTimer(params as { duration: string; prompt: string; recurring?: boolean }, ctx.ui, pi);
     },
   });
 
-  const typeLabel = recurring ? "recurring" : "one-shot";
-  return { ok: true, id: entry.id, typeLabel, display: duration.display };
-}
+  pi.registerTool({
+    name: "list_timers",
+    label: "List Timers",
+    description: "List all active timers with their IDs, durations, types, and prompts.",
+    parameters: Type.Object({}),
+    async execute(_toolCallId, _params, _signal, _onUpdate, _ctx) {
+      return executeListTimers();
+    },
+  });
 
-// ── Subcommand handlers ───────────────────────────────────────────
-
-function handleSet(parts: string[], ui: TimerUI, pi: TimerPi): void {
-  const parsed = parseSetArgs(parts);
-  if (!parsed) {
-    ui.notify("Usage: /timer set <duration> [--recurring] <prompt>", "error");
-    return;
-  }
-
-  const result = setTimerFromInput(parsed.durationStr, parsed.recurring, parsed.prompt, ui, pi);
-  if (!result.ok) {
-    ui.notify(result.error, "error");
-    return;
-  }
-
-  ui.notify(`Timer ${result.id} set (${result.typeLabel}, ${result.display}): ${parsed.prompt}`, "info");
-}
-
-function handleList(ui: TimerUI): void {
-  const entries = listTimers();
-  if (entries.length === 0) {
-    ui.notify("No active timers.", "info");
-    return;
-  }
-
-  const lines = ["Active timers:"];
-  for (const e of entries) {
-    const typeLabel = e.recurring ? "recurring" : "one-shot";
-    const truncated = e.prompt.length > 50 ? e.prompt.slice(0, 47) + "..." : e.prompt;
-    lines.push(`  ${e.id}  ${e.durationStr.padEnd(5)} ${typeLabel.padEnd(10)} ${truncated}`);
-  }
-  ui.notify(lines.join("\n"), "info");
-}
-
-function handleCancel(parts: string[], ui: TimerUI): void {
-  const id = parts[1];
-  if (!id) {
-    ui.notify("Usage: /timer cancel <id>", "error");
-    return;
-  }
-
-  if (cancelTimer(id)) {
-    ui.notify(`Cancelled timer ${id}`, "info");
-  } else {
-    ui.notify(`Timer "${id}" not found.`, "error");
-  }
-}
-
-function showHelp(ui: TimerUI): void {
-  ui.notify(
-    [
-      "Usage: /timer <subcommand> [args...]",
-      "",
-      "  set <duration> [--recurring] <prompt>   Create a timer",
-      "  list                                    Show active timers",
-      "  cancel <id>                             Cancel a timer by ID",
-      "  help                                    Show this message",
-      "",
-      "Duration: e.g. 5m, 60m, 2h",
-    ].join("\n"),
-    "info",
-  );
-}
-
-// ── Argument parsing ──────────────────────────────────────────────
-
-export interface ParsedSetArgs {
-  durationStr: string;
-  recurring: boolean;
-  prompt: string;
-}
-
-export function parseSetArgs(parts: string[]): ParsedSetArgs | null {
-  const durationStr = parts[1];
-  if (!durationStr) return null;
-
-  const rest = parts.slice(2);
-  const recurring = rest.includes("--recurring");
-  const promptParts = rest.filter((p) => p !== "--recurring");
-  const prompt = promptParts.join(" ").trim();
-
-  if (!prompt) return null;
-
-  return { durationStr, recurring, prompt };
+  pi.registerTool({
+    name: "cancel_timer",
+    label: "Cancel Timer",
+    description: "Cancel an active timer by its ID.",
+    parameters: Type.Object({
+      id: Type.String({ description: "Timer ID to cancel (from set_timer or list_timers)" }),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      return executeCancelTimer((params as { id: string }).id, ctx.ui);
+    },
+  });
 }
 
 // ── Autocompletion ────────────────────────────────────────────────
@@ -231,9 +73,35 @@ const SUBCOMMANDS: AutocompleteItem[] = [
   { value: "help", label: "help — Show help" },
 ];
 
-function getTimerCompletions(prefix: string): AutocompleteItem[] | null {
+export function getTimerCompletions(prefix: string): AutocompleteItem[] | null {
   const trimmed = prefix.trimStart();
-  if (trimmed.includes(" ")) return null;
+
+  // After a subcommand has been typed (contains a space)
+  if (trimmed.includes(" ")) {
+    const spaceIdx = trimmed.indexOf(" ");
+    const sub = trimmed.slice(0, spaceIdx);
+    const rest = trimmed.slice(spaceIdx + 1).trimStart();
+
+    // Only provide completions for "cancel <id>"
+    if (sub !== "cancel" || rest.includes(" ")) return null;
+
+    const entries = listTimers();
+    if (entries.length === 0) return null;
+
+    const filtered = entries.filter((e) => e.id.startsWith(rest));
+    return filtered.length > 0
+      ? filtered.map((e) => {
+          const typeLabel = e.recurring ? "recurring" : "one-shot";
+          const truncated = e.prompt.length > 40 ? e.prompt.slice(0, 37) + "..." : e.prompt;
+          return {
+            value: `cancel ${e.id}`,
+            label: e.id,
+            description: `${typeLabel} ${e.durationStr} — ${truncated}`,
+          };
+        })
+      : null;
+  }
+
   const filtered = SUBCOMMANDS.filter((item) => item.value.startsWith(trimmed));
   return filtered.length > 0 ? filtered : null;
 }

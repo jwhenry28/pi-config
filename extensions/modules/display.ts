@@ -1,12 +1,12 @@
 export interface ModuleDisplayItem {
   name: string;
-  shown: boolean;
+  enabled: boolean;
 }
 
 interface ModuleDisplayFormatOptions {
   formatHeader?: (text: string) => string;
-  formatShownLine?: (name: string) => string;
-  formatHiddenLine?: (name: string) => string;
+  formatEnabledLine?: (name: string) => string;
+  formatDisabledLine?: (name: string) => string;
 }
 
 export function formatModulesBlock(
@@ -17,12 +17,12 @@ export function formatModulesBlock(
   const lines = [header];
 
   for (const item of items) {
-    if (item.shown) {
-      const shown = options.formatShownLine ? options.formatShownLine(item.name) : `* ${item.name}`;
-      lines.push(`    ${shown}`);
+    if (item.enabled) {
+      const enabled = options.formatEnabledLine ? options.formatEnabledLine(item.name) : `* ${item.name}`;
+      lines.push(`    ${enabled}`);
     } else {
-      const hidden = options.formatHiddenLine ? options.formatHiddenLine(item.name) : `- ${item.name}`;
-      lines.push(`    ${hidden}`);
+      const disabled = options.formatDisabledLine ? options.formatDisabledLine(item.name) : `- ${item.name}`;
+      lines.push(`    ${disabled}`);
     }
   }
 

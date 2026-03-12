@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { handleTimerCommand, parseSetArgs } from "../index.js";
+import { handleTimerCommand, parseSetArgs, getTimerCompletions } from "../index.js";
 import { clearAll, getTimerCount, listTimers } from "../state.js";
 
 describe("parseSetArgs", () => {
@@ -156,5 +156,97 @@ describe("handleTimerCommand", () => {
   it("warns on unknown subcommand", () => {
     handleTimerCommand("bogus", ui, mockPi as any);
     expect(notifications[0].level).toBe("warning");
+  });
+});
+
+describe("getTimerCompletions", () => {
+  const ui = { notify: () => {} };
+  const mockPi = { sendUserMessage: () => {} };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    clearAll();
+  });
+
+  afterEach(() => {
+    clearAll();
+    vi.useRealTimers();
+  });
+
+  it("completes subcommands with no input", () => {
+    const items = getTimerCompletions("");
+    expect(items).toHaveLength(4);
+    expect(items!.map((i) => i.value)).toEqual(["set", "list", "cancel", "help"]);
+  });
+
+  it("filters subcommands by prefix", () => {
+    const items = getTimerCompletions("c");
+    expect(items).toHaveLength(1);
+    expect(items![0].value).toBe("cancel");
+  });
+
+  it("returns null for no matching subcommand", () => {
+    expect(getTimerCompletions("z")).toBeNull();
+  });
+
+  it("returns null for cancel with no active timers", () => {
+    expect(getTimerCompletions("cancel ")).toBeNull();
+  });
+
+  it("lists all active timers for 'cancel '", () => {
+    handleTimerCommand("set 5m Task A", ui, mockPi as any);
+    handleTimerCommand("set 2h --recurring Task B", ui, mockPi as any);
+
+    const items = getTimerCompletions("cancel ");
+    expect(items).toHaveLength(2);
+
+    const timers = listTimers();
+    const ids = timers.map((t) => t.id);
+    for (const item of items!) {
+      expect(item.value).toMatch(/^cancel [0-9a-f]{6}$/);
+      expect(ids).toContain(item.label);
+    }
+  });
+
+  it("filters timers by ID prefix for cancel", () => {
+    handleTimerCommand("set 5m Task A", ui, mockPi as any);
+    handleTimerCommand("set 2h Task B", ui, mockPi as any);
+
+    const timers = listTimers();
+    const firstId = timers[0].id;
+
+    const items = getTimerCompletions(`cancel ${firstId}`);
+    expect(items).toHaveLength(1);
+    expect(items![0].label).toBe(firstId);
+  });
+
+  it("shows timer details in description", () => {
+    handleTimerCommand("set 5m --recurring My recurring task", ui, mockPi as any);
+
+    const items = getTimerCompletions("cancel ");
+    expect(items).toHaveLength(1);
+    expect(items![0].description).toContain("recurring");
+    expect(items![0].description).toContain("5m");
+    expect(items![0].description).toContain("My recurring task");
+  });
+
+  it("shows one-shot in description for non-recurring", () => {
+    handleTimerCommand("set 5m One shot task", ui, mockPi as any);
+
+    const items = getTimerCompletions("cancel ");
+    expect(items).toHaveLength(1);
+    expect(items![0].description).toContain("one-shot");
+  });
+
+  it("returns null for non-cancel subcommands with args", () => {
+    expect(getTimerCompletions("set ")).toBeNull();
+    expect(getTimerCompletions("list ")).toBeNull();
+    expect(getTimerCompletions("help ")).toBeNull();
+  });
+
+  it("returns null after cancel ID (extra space)", () => {
+    handleTimerCommand("set 5m Task", ui, mockPi as any);
+    const timers = listTimers();
+    expect(getTimerCompletions(`cancel ${timers[0].id} `)).toBeNull();
   });
 });
