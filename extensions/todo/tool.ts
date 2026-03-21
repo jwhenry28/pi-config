@@ -7,9 +7,9 @@ import { formatTodoList } from "./list.js";
 /**
  * Core logic for the todo_list tool. Exported for testability.
  */
-export function executeTodoList(cwd: string, storeName?: string): { content: Array<{ type: "text"; text: string }> } {
+export function executeTodoList(cwd: string, storeName?: string) {
   const result = formatTodoList(cwd, storeName);
-  return { content: [{ type: "text" as const, text: result ?? "No open todos." }] };
+  return { content: [{ type: "text" as const, text: result ?? "No open todos." }], details: undefined };
 }
 
 export function registerTodoTool(pi: ExtensionAPI) {
@@ -22,7 +22,7 @@ export function registerTodoTool(pi: ExtensionAPI) {
       parameters: Type.Object({}),
       async execute(_toolCallId, _params, signal, _onUpdate, ctx) {
         if (signal?.aborted)
-          return { content: [{ type: "text" as const, text: "Cancelled" }] };
+          return { content: [{ type: "text" as const, text: "Cancelled" }], details: undefined };
         return executeTodoList(getCwd(ctx));
       },
     }),

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { loadSkills } from "@mariozechner/pi-coding-agent";
+import { loadAllSkills } from "../shared/skill-loader.js";
 import { getCwd } from "../shared/cwd.js";
 import type { WorkflowState } from "./types.js";
 import { isPromptStep } from "./types.js";
@@ -23,6 +23,7 @@ import {
 } from "./runner.js";
 import { writeKey } from "../memory/store.js";
 import "./commands/check-todos-complete.js";
+import "./commands/ask-user.js";
 
 export default function workflowExtension(pi: ExtensionAPI) {
 	const state: WorkflowState = {
@@ -278,8 +279,7 @@ function handleEvaluateConditionCommand(state: WorkflowState, args: string, ctx:
 function registerWorkflowEvents(pi: ExtensionAPI, state: WorkflowState): void {
 	pi.on("session_start", async (_event, ctx) => {
 		state.cwd = getCwd(ctx);
-		const result = loadSkills({ cwd: state.cwd });
-		state.allSkills = result.skills;
+		state.allSkills = loadAllSkills(state.cwd);
 	});
 
 	pi.on("context", async (event) => {
@@ -296,11 +296,22 @@ function registerWorkflowEvents(pi: ExtensionAPI, state: WorkflowState): void {
 		return { systemPrompt: cleaned };
 	});
 
-	pi.on("agent_end", async (_event, ctx) => {
+	pi.on("agent_end", async (event, ctx) => {
 		if (!state.active) return;
 		if (state.advancing) return;
 		const step = currentStep(state);
 		if (!step) return;
+
+		// If the agent was aborted (user hit ESC), don't auto-advance.
+		// The user can interact freely; the next natural agent_end will resume the workflow.
+		const lastAssistant = [...event.messages].reverse().find((m: any) => m.role === "assistant");
+		if (lastAssistant && (lastAssistant as any).stopReason === "aborted") {
+			ctx.ui.notify(
+				`⏸️ Workflow paused (interrupted). Send a message to continue the current step, or \`/workflow abort\` to cancel.`,
+				"warning",
+			);
+			return;
+		}
 
 		await handlePostStep(pi, state, ctx, step);
 	});

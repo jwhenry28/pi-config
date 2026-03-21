@@ -1,8 +1,11 @@
 // Command registry for code-only workflow steps and conditions.
 
+import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+
 export interface CommandContext {
 	cwd: string;
 	workflowId: string;
+	ctx: ExtensionContext;
 }
 
 export type ConditionCommandFn = (

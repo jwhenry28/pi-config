@@ -4,9 +4,9 @@
  * Adds a [Modules] section to the startup info, displayed after
  * the built-in [Skills] and [Extensions] sections.
  *
- * Each module shows its status:
- *   * module-name   (enabled)
- *   - module-name   (disabled)
+ * Each module shows its visibility status:
+ *   * module-name   (shown)
+ *   - module-name   (hidden)
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -17,15 +17,15 @@ import { formatModulesBlock } from "./modules/display.js";
 export default function (pi: ExtensionAPI) {
   pi.registerMessageRenderer("startup-modules", (message, _options, theme) => {
     const details = message.details as {
-      modules: Array<{ name: string; enabled: boolean }>;
+      modules: Array<{ name: string; shown: boolean }>;
     };
 
     if (!details?.modules?.length) return undefined;
 
     const text = formatModulesBlock(details.modules, {
       formatHeader: (text) => theme.fg("mdHeading", text),
-      formatEnabledLine: (name) => `${theme.fg("success", "*")} ${theme.fg("dim", name)}`,
-      formatDisabledLine: (name) => theme.fg("dim", `- ${name}`),
+      formatShownLine: (name) => `${theme.fg("success", "*")} ${theme.fg("dim", name)}`,
+      formatHiddenLine: (name) => theme.fg("dim", `- ${name}`),
     });
     return new Text(text, 0, 0);
   });
@@ -46,7 +46,7 @@ export default function (pi: ExtensionAPI) {
 
     const moduleList = names.map((name) => ({
       name,
-      enabled: shown.includes(name),
+      shown: shown.includes(name),
     }));
 
     pi.sendMessage({

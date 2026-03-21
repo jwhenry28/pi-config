@@ -138,7 +138,7 @@ export async function evaluateCommandCondition(
 	}
 
 	try {
-		const commandCtx: CommandContext = { cwd, workflowId };
+		const commandCtx: CommandContext = { cwd, workflowId, ctx };
 		await fn(commandCtx, condition.args);
 	} catch (e) {
 		ctx.ui.notify(`Command "${condition.command}" failed: ${(e as Error).message}`, "warning");

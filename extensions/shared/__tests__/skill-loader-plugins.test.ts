@@ -55,4 +55,49 @@ describe("getPluginSkillPaths", () => {
     setEnabledPlugins(cwd, ["test-repo"]);
     expect(getPluginSkillPaths(cwd)).toEqual([]);
   });
+
+  it("returns skill paths from skill-library recursively", () => {
+    const pluginsDir = getPluginsDir();
+    const deepSkillDir = join(pluginsDir, "test-repo", "skill-library", "category", "subcategory", "my-deep-skill");
+    mkdirSync(deepSkillDir, { recursive: true });
+    writeFileSync(join(deepSkillDir, "SKILL.md"), "---\nname: deep-skill\ndescription: test\n---\n# Deep");
+
+    const topSkillDir = join(pluginsDir, "test-repo", "skill-library", "top-skill");
+    mkdirSync(topSkillDir, { recursive: true });
+    writeFileSync(join(topSkillDir, "SKILL.md"), "---\nname: top-skill\ndescription: test\n---\n# Top");
+
+    setEnabledPlugins(cwd, ["test-repo"]);
+    const paths = getPluginSkillPaths(cwd);
+
+    expect(paths).toHaveLength(2);
+    expect(paths).toContain(deepSkillDir);
+    expect(paths).toContain(topSkillDir);
+  });
+
+  it("returns skills from both skills/ and skill-library/ directories", () => {
+    const pluginsDir = getPluginsDir();
+
+    const classicSkillDir = join(pluginsDir, "test-repo", "skills", "classic-skill");
+    mkdirSync(classicSkillDir, { recursive: true });
+    writeFileSync(join(classicSkillDir, "SKILL.md"), "---\nname: classic\ndescription: test\n---\n# Classic");
+
+    const libSkillDir = join(pluginsDir, "test-repo", "skill-library", "lib-skill");
+    mkdirSync(libSkillDir, { recursive: true });
+    writeFileSync(join(libSkillDir, "SKILL.md"), "---\nname: lib\ndescription: test\n---\n# Lib");
+
+    setEnabledPlugins(cwd, ["test-repo"]);
+    const paths = getPluginSkillPaths(cwd);
+
+    expect(paths).toHaveLength(2);
+    expect(paths).toContain(classicSkillDir);
+    expect(paths).toContain(libSkillDir);
+  });
+
+  it("skips skill-library directories without SKILL.md", () => {
+    const pluginsDir = getPluginsDir();
+    mkdirSync(join(pluginsDir, "test-repo", "skill-library", "no-skill-here"), { recursive: true });
+
+    setEnabledPlugins(cwd, ["test-repo"]);
+    expect(getPluginSkillPaths(cwd)).toEqual([]);
+  });
 });

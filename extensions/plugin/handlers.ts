@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, rmSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { BorderedLoader } from "@mariozechner/pi-coding-agent";
-import { normalizeGitUrl, extractRepoName, runGit, runGitAsync } from "./git.js";
+import { normalizeGitUrl, extractRepoName, runGit, runGitAsync, getCurrentBranch } from "./git.js";
 import type { PluginExecutionContext } from "./constants.js";
 import { getPluginsDir } from "../shared/home.js";
 import { getEnabledPlugins, setEnabledPlugins } from "../shared/plugins.js";
@@ -76,7 +76,9 @@ async function pullWithLoader(
     const loader = new BorderedLoader(tui, theme, `Updating ${name}…`);
     loader.onAbort = () => done({ ok: false, error: "Aborted" });
 
-    runGitAsync(["pull", "origin", "main"], dir)
+    const branch = getCurrentBranch(dir);
+
+    runGitAsync(["pull", "origin", branch], dir)
       .then(() => done({ ok: true }))
       .catch((err: Error) => done({ ok: false, error: err.message }));
 
@@ -233,6 +235,69 @@ export async function handleDisable(parts: string[], tex: PluginExecutionContext
   enabled.splice(idx, 1);
   setEnabledPlugins(tex.cwd, enabled);
   tex.ui.notify(`Disabled plugin "${name}". Reload to deactivate its skills and workflows.`, "info");
+
+  if (tex.reload) {
+    tex.ui.notify("Reloading...", "info");
+    await tex.reload();
+  }
+}
+
+export async function handleCheckout(parts: string[], tex: PluginExecutionContext): Promise<void> {
+  const name = parts[1];
+  const branch = parts[2];
+  if (!name || !branch) {
+    tex.ui.notify("Usage: /plugin checkout <name> <branch>", "warning");
+    return;
+  }
+
+  const pluginDir = join(getPluginsDir(), name);
+  if (!existsSync(pluginDir)) {
+    tex.ui.notify(`Plugin directory "${name}" not found in ~/.pi/plugins/.`, "error");
+    return;
+  }
+
+  if (hasUncommittedChanges(pluginDir)) {
+    const confirmed = await tex.ui.confirm(
+      "Uncommitted changes",
+      `Plugin "${name}" has uncommitted changes or unpushed commits. Switch branch anyway?`,
+    );
+    if (!confirmed) {
+      tex.ui.notify("Aborted.", "info");
+      return;
+    }
+  }
+
+  const oldBranch = getCurrentBranch(pluginDir);
+
+  const fetchResult = await tex.ui.custom<{ ok: boolean; error?: string }>((tui, theme, _kb, done) => {
+    const loader = new BorderedLoader(tui, theme, `Fetching branch "${branch}"…`);
+    loader.onAbort = () => done({ ok: false, error: "Aborted" });
+
+    runGitAsync(["fetch", "origin", `+refs/heads/${branch}:refs/remotes/origin/${branch}`, "--depth", "1"], pluginDir)
+      .then(() => done({ ok: true }))
+      .catch((err: Error) => done({ ok: false, error: err.message }));
+
+    return loader;
+  });
+
+  if (!fetchResult.ok) {
+    tex.ui.notify(
+      fetchResult.error === "Aborted"
+        ? "Fetch aborted."
+        : `Failed to fetch branch "${branch}": ${fetchResult.error}`,
+      "error",
+    );
+    return;
+  }
+
+  try {
+    runGit(["checkout", "-B", branch, `origin/${branch}`], pluginDir);
+  } catch (err: unknown) {
+    tex.ui.notify(`Failed to checkout branch "${branch}": ${(err as Error).message}`, "error");
+    return;
+  }
+
+  tex.ui.notify(`Switched plugin "${name}" from ${oldBranch} to ${branch}.`, "info");
 
   if (tex.reload) {
     tex.ui.notify("Reloading...", "info");

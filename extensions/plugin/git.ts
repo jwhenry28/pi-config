@@ -51,6 +51,16 @@ export function runGit(args: string[], cwd: string): string {
 /**
  * Run a git command asynchronously. Resolves with stdout, rejects with stderr.
  */
+/**
+ * Get the current branch name for a repository.
+ */
+export function getCurrentBranch(cwd: string): string {
+  return runGit(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
+}
+
+/**
+ * Run a git command asynchronously. Resolves with stdout, rejects with stderr.
+ */
 export function runGitAsync(args: string[], cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const proc = spawn("git", args, { cwd, stdio: ["pipe", "pipe", "pipe"] });

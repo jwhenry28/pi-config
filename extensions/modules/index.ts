@@ -5,7 +5,7 @@ import type { ResolvedSkill } from "../shared/types.js";
 import { discoverModules, type ModuleContents } from "./registry.js";
 import { formatModulesBlock } from "./display.js";
 import { loadState, saveState, computeActiveTools, computeExcludedSkillNames, type ModuleState } from "./state.js";
-import type { ModuleToolTagEvent } from "./api.js";
+import { drainToolTagBuffer, type ModuleToolTagEvent } from "./api.js";
 
 export default function modulesExtension(pi: ExtensionAPI) {
   // --- Shared state ---
@@ -49,6 +49,10 @@ export default function modulesExtension(pi: ExtensionAPI) {
    */
   function ensureInitialized(): void {
     if (!initialized) {
+      // Replay any tool-tag events that fired before our listener was registered
+      for (const event of drainToolTagBuffer(pi)) {
+        toolModuleMap.set(event.toolName, event.moduleName);
+      }
       refreshModules();
       initialized = true;
     }
@@ -148,12 +152,12 @@ export default function modulesExtension(pi: ExtensionAPI) {
   // --- Slash command ---
 
   pi.registerCommand("module", {
-    description: "Manage modules: enable, disable, list",
+    description: "Manage modules: show, hide, list",
     getArgumentCompletions: (prefix) => {
       const parts = prefix.split(/\s+/);
 
       if (parts.length <= 1) {
-        const subcommands = ["enable", "disable", "list", "help"];
+        const subcommands = ["show", "hide", "list", "help"];
         const filtered = subcommands.filter(s => s.startsWith(parts[0] || ""));
         return filtered.length > 0 ? filtered.map(s => ({ value: s, label: s })) : null;
       }
@@ -161,7 +165,7 @@ export default function modulesExtension(pi: ExtensionAPI) {
       const subcommand = parts[0];
       const modulePrefix = parts[1] || "";
 
-      const needsModuleCompletion = subcommand === "enable" || subcommand === "disable" || subcommand === "list";
+      const needsModuleCompletion = subcommand === "show" || subcommand === "hide" || subcommand === "list";
       if (!needsModuleCompletion) return null;
 
       const moduleNames = Array.from(modules.keys());
@@ -177,9 +181,9 @@ export default function modulesExtension(pi: ExtensionAPI) {
           [
             "Usage: /module <subcommand> [args...]",
             "",
-            "  enable <name>    Enable a module (activate its skills and tools)",
-            "  disable <name>   Disable a module (deactivate its skills and tools)",
-            "  list             List all discovered modules and their status",
+            "  show <name>      Show a module (activate its skills and tools)",
+            "  hide <name>      Hide a module (deactivate its skills and tools)",
+            "  list             Show all discovered modules (and which are shown)",
             "  list <name>      Show skills and tools in a specific module",
             "  help             Show this help message",
           ].join("\n"),
@@ -191,10 +195,10 @@ export default function modulesExtension(pi: ExtensionAPI) {
       ensureInitialized();
 
       switch (subcommand) {
-        case "enable": {
+        case "show": {
           const moduleName = parts[1];
           if (!moduleName) {
-            ctx.ui.notify("Usage: /module enable <name>", "warning");
+            ctx.ui.notify("Usage: /module show <name>", "warning");
             return;
           }
           if (!modules.has(moduleName)) {
@@ -202,18 +206,18 @@ export default function modulesExtension(pi: ExtensionAPI) {
             return;
           }
           if (!showModule(moduleName)) {
-            ctx.ui.notify(`Module "${moduleName}" is already enabled`, "warning");
+            ctx.ui.notify(`Module "${moduleName}" is already shown`, "warning");
             return;
           }
           const contents = modules.get(moduleName)!;
-          ctx.ui.notify(`✓ Enabled module "${moduleName}" (${contents.skills.length} skill(s), ${contents.tools.length} tool(s))`, "info");
+          ctx.ui.notify(`✓ Shown module "${moduleName}" (${contents.skills.length} skill(s), ${contents.tools.length} tool(s))`, "info");
           break;
         }
 
-        case "disable": {
+        case "hide": {
           const moduleName = parts[1];
           if (!moduleName) {
-            ctx.ui.notify("Usage: /module disable <name>", "warning");
+            ctx.ui.notify("Usage: /module hide <name>", "warning");
             return;
           }
           if (!modules.has(moduleName)) {
@@ -221,11 +225,11 @@ export default function modulesExtension(pi: ExtensionAPI) {
             return;
           }
           if (!hideModule(moduleName)) {
-            ctx.ui.notify(`Module "${moduleName}" is not enabled`, "warning");
+            ctx.ui.notify(`Module "${moduleName}" is not shown`, "warning");
             return;
           }
           const contents = modules.get(moduleName)!;
-          ctx.ui.notify(`✓ Disabled module "${moduleName}" (${contents.skills.length} skill(s), ${contents.tools.length} tool(s))`, "info");
+          ctx.ui.notify(`✓ Hidden module "${moduleName}" (${contents.skills.length} skill(s), ${contents.tools.length} tool(s))`, "info");
           break;
         }
 
@@ -263,11 +267,11 @@ export default function modulesExtension(pi: ExtensionAPI) {
             }
             const shownModules = state.shown ?? [];
             const text = formatModulesBlock(
-              names.map((name) => ({ name, enabled: shownModules.includes(name) })),
+              names.map((name) => ({ name, shown: shownModules.includes(name) })),
               {
                 formatHeader: (text) => ctx.ui.theme.fg("mdHeading", text),
-                formatEnabledLine: (name) => `${ctx.ui.theme.fg("success", "*")} ${ctx.ui.theme.fg("dim", name)}`,
-                formatDisabledLine: (name) => ctx.ui.theme.fg("dim", `- ${name}`),
+                formatShownLine: (name) => `${ctx.ui.theme.fg("success", "*")} ${ctx.ui.theme.fg("dim", name)}`,
+                formatHiddenLine: (name) => ctx.ui.theme.fg("dim", `- ${name}`),
               },
             );
             ctx.ui.notify(text, "info");
@@ -276,7 +280,7 @@ export default function modulesExtension(pi: ExtensionAPI) {
         }
 
         default:
-          ctx.ui.notify(`Unknown subcommand: ${subcommand}. Use enable, disable, list, or help.`, "warning");
+          ctx.ui.notify(`Unknown subcommand: ${subcommand}. Use show, hide, list, or help.`, "warning");
       }
     },
   });

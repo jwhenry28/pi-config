@@ -351,7 +351,7 @@ export async function runCurrentStep(
     }
 
     try {
-      await fn({ cwd: state.cwd, workflowId: state.active.id }, step.args);
+      await fn({ cwd: state.cwd, workflowId: state.active.id, ctx }, step.args);
     } catch (e) {
       ctx.ui.notify(`[Workflow] Step command "${step.command}" failed: ${(e as Error).message}`, "error");
       state.active = null;

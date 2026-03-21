@@ -43,36 +43,36 @@ describe("modules extension (component)", () => {
     expect(hasModuleNotif).toBe(true);
   });
 
-  it("/module enable activates a module", async () => {
+  it("/module show activates a module", async () => {
     test = await createComponentTest({
       initialSkills: [{ name: "test-mod-skill", content: SKILL_CONTENT }],
     });
-    test.sendUserMessage("/module enable test-mod");
+    test.sendUserMessage("/module show test-mod");
 
     expect(test.notifications).toContainEqual(
       expect.objectContaining({
-        message: expect.stringContaining("Enabled module"),
+        message: expect.stringContaining("Shown module"),
       })
     );
   });
 
-  it("/module disable deactivates a module", async () => {
+  it("/module hide deactivates a module", async () => {
     test = await createComponentTest({
       initialSkills: [{ name: "test-mod-skill", content: SKILL_CONTENT }],
       shownModules: ["test-mod"],
     });
-    test.sendUserMessage("/module disable test-mod");
+    test.sendUserMessage("/module hide test-mod");
 
     expect(test.notifications).toContainEqual(
       expect.objectContaining({
-        message: expect.stringContaining("Disabled module"),
+        message: expect.stringContaining("Hidden module"),
       })
     );
   });
 
-  it("/module enable on nonexistent module shows error", async () => {
+  it("/module show on nonexistent module shows error", async () => {
     test = await createComponentTest();
-    test.sendUserMessage("/module enable nonexistent");
+    test.sendUserMessage("/module show nonexistent");
 
     expect(test.notifications).toContainEqual(
       expect.objectContaining({
@@ -102,7 +102,7 @@ describe("modules extension (component)", () => {
   // the modules extension's skill loading (tempDir override). The underlying
   // filtering logic is thoroughly tested in state.test.ts.
 
-  it.skip("disabling a module strips its skills from the LLM system prompt", async () => {
+  it.skip("hiding a module strips its skills from the LLM system prompt", async () => {
     test = await createComponentTest({
       initialSkills: [{ name: "test-mod-skill", content: SKILL_CONTENT }],
       shownModules: ["test-mod"],
@@ -115,28 +115,28 @@ describe("modules extension (component)", () => {
       return originalStreamFn(model, context, options);
     };
 
-    // With module enabled, skill should be in the system prompt
-    test.sendUserMessage("hello enabled");
+    // With module shown, skill should be in the system prompt
+    test.sendUserMessage("hello shown");
     await test.mockAgentResponse({ text: "hi" });
     await test.waitForIdle();
 
-    const enabledContext = capturedContexts[0];
-    expect(enabledContext.systemPrompt).toContain("test-mod-skill");
+    const shownContext = capturedContexts[0];
+    expect(shownContext.systemPrompt).toContain("test-mod-skill");
 
-    // Now disable the module
-    test.sendUserMessage("/module disable test-mod");
+    // Now hide the module
+    test.sendUserMessage("/module hide test-mod");
     capturedContexts = [];
 
-    // With module disabled, skill should NOT be in the system prompt
-    test.sendUserMessage("hello disabled");
+    // With module hidden, skill should NOT be in the system prompt
+    test.sendUserMessage("hello hidden");
     await test.mockAgentResponse({ text: "hi" });
     await test.waitForIdle();
 
-    const disabledContext = capturedContexts[0];
-    expect(disabledContext.systemPrompt).not.toContain("test-mod-skill");
+    const hiddenContext = capturedContexts[0];
+    expect(hiddenContext.systemPrompt).not.toContain("test-mod-skill");
   });
 
-  it.skip("enabling a module restores its skills in the LLM system prompt", async () => {
+  it.skip("showing a module restores its skills in the LLM system prompt", async () => {
     test = await createComponentTest({
       initialSkills: [{ name: "test-mod-skill", content: SKILL_CONTENT }],
     });
@@ -148,30 +148,30 @@ describe("modules extension (component)", () => {
       return originalStreamFn(model, context, options);
     };
 
-    // With module disabled, skill should NOT be in system prompt
-    test.sendUserMessage("hello disabled");
+    // With module hidden, skill should NOT be in system prompt
+    test.sendUserMessage("hello hidden");
     await test.mockAgentResponse({ text: "hi" });
     await test.waitForIdle();
 
-    const disabledContext = capturedContexts[0];
-    expect(disabledContext.systemPrompt).not.toContain("test-mod-skill");
+    const hiddenContext = capturedContexts[0];
+    expect(hiddenContext.systemPrompt).not.toContain("test-mod-skill");
 
-    // Enable the module
-    test.sendUserMessage("/module enable test-mod");
+    // Show the module
+    test.sendUserMessage("/module show test-mod");
     capturedContexts = [];
 
     // Now skill should be in the system prompt
-    test.sendUserMessage("hello enabled");
+    test.sendUserMessage("hello shown");
     await test.mockAgentResponse({ text: "hi" });
     await test.waitForIdle();
 
-    const enabledContext = capturedContexts[0];
-    expect(enabledContext.systemPrompt).toContain("test-mod-skill");
+    const shownContext = capturedContexts[0];
+    expect(shownContext.systemPrompt).toContain("test-mod-skill");
   });
 
   // ── Tool filtering ─────────────────────────────────────────────
 
-  it.skip("disabling a module removes its tools from active tools", async () => {
+  it.skip("hiding a module removes its tools from active tools", async () => {
     test = await createComponentTest({
       initialSkills: [{ name: "test-mod-skill", content: SKILL_CONTENT }],
       shownModules: ["test-mod"],
@@ -193,27 +193,27 @@ describe("modules extension (component)", () => {
       return originalStreamFn(model, context, options);
     };
 
-    // Disable the module — should remove the tool
-    test.sendUserMessage("/module disable test-mod");
+    // Hide the module — should remove the tool
+    test.sendUserMessage("/module hide test-mod");
 
     test.sendUserMessage("use tool");
     await test.mockAgentResponse({ text: "ok" });
     await test.waitForIdle();
 
-    const disabledContext = capturedContexts[0];
-    const toolNames = (disabledContext.tools ?? []).map((t: any) => t.name);
+    const hiddenContext = capturedContexts[0];
+    const toolNames = (hiddenContext.tools ?? []).map((t: any) => t.name);
     expect(toolNames).not.toContain("test_mod_tool");
 
-    // Enable the module — should restore the tool
-    test.sendUserMessage("/module enable test-mod");
+    // Show the module — should restore the tool
+    test.sendUserMessage("/module show test-mod");
     capturedContexts = [];
 
     test.sendUserMessage("use tool again");
     await test.mockAgentResponse({ text: "ok" });
     await test.waitForIdle();
 
-    const enabledContext = capturedContexts[0];
-    const enabledToolNames = (enabledContext.tools ?? []).map((t: any) => t.name);
-    expect(enabledToolNames).toContain("test_mod_tool");
+    const shownContext = capturedContexts[0];
+    const shownToolNames = (shownContext.tools ?? []).map((t: any) => t.name);
+    expect(shownToolNames).toContain("test_mod_tool");
   });
 });
