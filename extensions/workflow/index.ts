@@ -22,8 +22,10 @@ import {
 	isMaxExecutionsReached,
 } from "./runner.js";
 import { writeKey } from "../memory/store.js";
+import "./commands/check-if-sam-unhealthy.js";
 import "./commands/check-todos-complete.js";
 import "./commands/ask-user.js";
+import "./commands/deploy-sam-application.js";
 
 export default function workflowExtension(pi: ExtensionAPI) {
 	const state: WorkflowState = {

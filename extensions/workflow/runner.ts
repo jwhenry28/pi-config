@@ -7,15 +7,30 @@ import type {
   ExtensionCommandContext,
   ContextEvent,
 } from "@mariozechner/pi-coding-agent";
-import type { WorkflowConfig, WorkflowStep, WorkflowState, PromptStep, CommandStep } from "./types.js";
-import { isPromptStep, isCommandStep, isPromptCondition, isCommandCondition } from "./types.js";
+import type {
+  WorkflowConfig,
+  WorkflowStep,
+  WorkflowState,
+  PromptStep,
+  CommandStep,
+} from "./types.js";
+import {
+  isPromptStep,
+  isCommandStep,
+  isPromptCondition,
+  isCommandCondition,
+} from "./types.js";
 import { resolvePrompt } from "./loader.js";
 import { evaluateCondition, evaluateCommandCondition } from "./evaluator.js";
 import { resolveModelAlias, parseModelRef } from "./models.js";
 import { getStepCommand } from "./commands/registry.js";
 import { readKey, deleteEntry } from "../memory/store.js";
 import { MEMORY_DIR } from "../shared/paths.js";
-import { isPluginSkillRef, resolvePluginSkillPath, parseSkillName } from "./plugin-skills.js";
+import {
+  isPluginSkillRef,
+  resolvePluginSkillPath,
+  parseSkillName,
+} from "./plugin-skills.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -263,7 +278,10 @@ export async function handlePostStep(
 ): Promise<void> {
   if (!step.conditions?.length) {
     if (isPromptStep(step) && step.approval) {
-      ctx.ui.notify(`Step "${step.name}" complete. Use \`/workflow continue\` when ready.`, "info");
+      ctx.ui.notify(
+        `Step "${step.name}" complete. Use \`/workflow continue\` when ready.`,
+        "info",
+      );
       return;
     }
     await autoAdvance(pi, state, ctx);
@@ -277,7 +295,10 @@ export async function handlePostStep(
     updateStatus(state, ctx);
     await restoreOriginalModules(pi, state);
     await restoreOriginalModel(pi, state, ctx);
-    ctx.ui.notify(`Workflow "${name}" aborted: condition evaluation failed`, "error");
+    ctx.ui.notify(
+      `Workflow "${name}" aborted: condition evaluation failed`,
+      "error",
+    );
     return;
   }
 
@@ -288,8 +309,13 @@ export async function handlePostStep(
 
   if (condResult.jump) {
     if (isMaxExecutionsReached(state, condResult.jump)) {
-      const targetStep = state.active!.config.steps.find(s => s.name === condResult.jump)!;
-      ctx.ui.notify(`[Workflow] Step "${condResult.jump}" reached maxExecutions limit (${targetStep.maxExecutions}), advancing sequentially`, "warning");
+      const targetStep = state.active!.config.steps.find(
+        (s) => s.name === condResult.jump,
+      )!;
+      ctx.ui.notify(
+        `[Workflow] Step "${condResult.jump}" reached maxExecutions limit (${targetStep.maxExecutions}), advancing sequentially`,
+        "warning",
+      );
       await autoAdvance(pi, state, ctx);
     } else {
       jumpToStep(state, condResult.jump);
@@ -299,7 +325,10 @@ export async function handlePostStep(
   }
 
   if (isPromptStep(step) && step.approval) {
-    ctx.ui.notify(`Step "${step.name}" complete. Use \`/workflow continue\` when ready.`, "info");
+    ctx.ui.notify(
+      `Step "${step.name}" complete. Use \`/workflow continue\` when ready.`,
+      "info",
+    );
     return;
   }
 
@@ -311,7 +340,9 @@ export function isMaxExecutionsReached(
   targetStepName: string,
 ): boolean {
   if (!state.active) return false;
-  const targetStep = state.active.config.steps.find(s => s.name === targetStepName);
+  const targetStep = state.active.config.steps.find(
+    (s) => s.name === targetStepName,
+  );
   if (!targetStep) return false;
   const count = state.active.executionCounts[targetStepName] ?? 0;
   return count >= targetStep.maxExecutions;
@@ -326,14 +357,18 @@ export async function runCurrentStep(
   const step = currentStep(state)!;
 
   // Track execution count
-  state.active.executionCounts[step.name] = (state.active.executionCounts[step.name] ?? 0) + 1;
+  state.active.executionCounts[step.name] =
+    (state.active.executionCounts[step.name] ?? 0) + 1;
 
   // Emit step marker for context filtering
   pi.sendMessage({
     customType: "workflow:step-marker",
     content: `--- Step: ${step.name} (execution ${state.active.executionCounts[step.name]}) ---`,
     display: true,
-    details: { stepName: step.name, execution: state.active.executionCounts[step.name] },
+    details: {
+      stepName: step.name,
+      execution: state.active.executionCounts[step.name],
+    },
   });
 
   updateStatus(state, ctx);
@@ -344,16 +379,25 @@ export async function runCurrentStep(
   if (isCommandStep(step)) {
     const fn = getStepCommand(step.command);
     if (!fn) {
-      ctx.ui.notify(`[Workflow] Step command "${step.command}" not found`, "error");
+      ctx.ui.notify(
+        `[Workflow] Step command "${step.command}" not found`,
+        "error",
+      );
       state.active = null;
       updateStatus(state, ctx);
       return;
     }
 
     try {
-      await fn({ cwd: state.cwd, workflowId: state.active.id, ctx }, step.args);
+      await fn(
+        { cwd: state.cwd, workflowId: state.active.id, ctx, ui: ctx.ui },
+        step.args,
+      );
     } catch (e) {
-      ctx.ui.notify(`[Workflow] Step command "${step.command}" failed: ${(e as Error).message}`, "error");
+      ctx.ui.notify(
+        `[Workflow] Step command "${step.command}" failed: ${(e as Error).message}`,
+        "error",
+      );
       state.active = null;
       updateStatus(state, ctx);
       return;
@@ -393,7 +437,9 @@ function notifyStepTransition(
   prevStepName: string,
 ): void {
   const next = currentStep(state)!;
-  const modelSuffix = isPromptStep(next) ? `, using model ${next.model}` : ` (command)`;
+  const modelSuffix = isPromptStep(next)
+    ? `, using model ${next.model}`
+    : ` (command)`;
   ctx.ui.notify(
     `✓ ${prevStepName} done. Proceeding to ${next.name}${modelSuffix}.`,
     "info",
@@ -608,10 +654,12 @@ export function filterToCurrentStep(
   if (markerIndex === -1) return undefined;
 
   // Keep only messages after the marker, excluding condition results
-  const filtered = event.messages.slice(markerIndex + 1).filter(
-    (m: any) =>
-      !(m.role === "custom" && m.customType === "workflow:condition-result"),
-  );
+  const filtered = event.messages
+    .slice(markerIndex + 1)
+    .filter(
+      (m: any) =>
+        !(m.role === "custom" && m.customType === "workflow:condition-result"),
+    );
 
   return { messages: filtered };
 }

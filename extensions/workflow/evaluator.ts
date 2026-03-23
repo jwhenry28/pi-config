@@ -3,13 +3,13 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "@sinclair/typebox";
 import {
-	createAgentSession,
-	SessionManager,
-	SettingsManager,
-	DefaultResourceLoader,
-	createCodingTools,
-	type ExtensionContext,
-	type ToolDefinition,
+  createAgentSession,
+  SessionManager,
+  SettingsManager,
+  DefaultResourceLoader,
+  createCodingTools,
+  type ExtensionContext,
+  type ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 import type { PromptCondition, CommandCondition } from "./types.js";
 
@@ -17,12 +17,16 @@ import type { PromptCondition, CommandCondition } from "./types.js";
  *  Uses globalThis to ensure same instance across module boundaries (vitest + dynamic imports). */
 const _global = globalThis as any;
 
-export function setConditionStreamFnOverride(fn: ((model: any, context: any, options?: any) => any) | undefined): void {
-	_global.__pi_conditionStreamFnOverride = fn;
+export function setConditionStreamFnOverride(
+  fn: ((model: any, context: any, options?: any) => any) | undefined,
+): void {
+  _global.__pi_conditionStreamFnOverride = fn;
 }
 
-function getConditionStreamFnOverride(): ((model: any, context: any, options?: any) => any) | undefined {
-	return _global.__pi_conditionStreamFnOverride;
+function getConditionStreamFnOverride():
+  | ((model: any, context: any, options?: any) => any)
+  | undefined {
+  return _global.__pi_conditionStreamFnOverride;
 }
 import { resolvePrompt } from "./loader.js";
 import { resolveModelAlias, parseModelRef } from "./models.js";
@@ -32,115 +36,148 @@ import { writeKey } from "../memory/store.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const conditionTemplate = readFileSync(
-	join(__dirname, "prompts", "condition-prompt.md"),
-	"utf-8",
+  join(__dirname, "prompts", "condition-prompt.md"),
+  "utf-8",
 );
 
 /**
  * Create the evaluate_condition tool definition that writes to workflow memory.
  */
-function createEvaluateConditionTool(cwd: string, workflowId: string): ToolDefinition {
-	return {
-		name: "evaluate_condition",
-		label: "Evaluate Condition",
-		description: "Report the result of a condition evaluation. Call this exactly once with your assessment.",
-		parameters: Type.Object({
-			result: Type.Union([Type.Literal("true"), Type.Literal("false")], {
-				description: 'Whether the condition is met: "true" or "false"',
-			}),
-			explanation: Type.String({
-				description: "Brief explanation of why the condition is or is not met",
-			}),
-		}),
-		async execute(_toolCallId, params) {
-			const { result, explanation } = params;
-			if (result !== "true" && result !== "false") {
-				return {
-					content: [{ type: "text", text: 'Error: result must be exactly "true" or "false". Please try again.' }],
-					isError: true,
-					details: {},
-				};
-			}
-			writeKey(cwd, workflowId, "workflow-condition-result",
-				JSON.stringify({ result, explanation }));
-			return {
-				content: [{ type: "text", text: `Condition evaluated: ${result} — ${explanation}` }],
-				details: {},
-			};
-		},
-	};
+function createEvaluateConditionTool(
+  cwd: string,
+  workflowId: string,
+): ToolDefinition {
+  return {
+    name: "evaluate_condition",
+    label: "Evaluate Condition",
+    description:
+      "Report the result of a condition evaluation. Call this exactly once with your assessment.",
+    parameters: Type.Object({
+      result: Type.Union([Type.Literal("true"), Type.Literal("false")], {
+        description: 'Whether the condition is met: "true" or "false"',
+      }),
+      explanation: Type.String({
+        description: "Brief explanation of why the condition is or is not met",
+      }),
+    }),
+    async execute(_toolCallId, params) {
+      const { result, explanation } = params;
+      if (result !== "true" && result !== "false") {
+        return {
+          content: [
+            {
+              type: "text",
+              text: 'Error: result must be exactly "true" or "false". Please try again.',
+            },
+          ],
+          isError: true,
+          details: {},
+        };
+      }
+      writeKey(
+        cwd,
+        workflowId,
+        "workflow-condition-result",
+        JSON.stringify({ result, explanation }),
+      );
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Condition evaluated: ${result} — ${explanation}`,
+          },
+        ],
+        details: {},
+      };
+    },
+  };
 }
 
 export async function evaluateCondition(
-	condition: PromptCondition,
-	cwd: string,
-	workflowId: string,
-	ctx: ExtensionContext,
+  condition: PromptCondition,
+  cwd: string,
+  workflowId: string,
+  ctx: ExtensionContext,
 ): Promise<void> {
-	const resolvedPrompt = resolvePrompt(condition.prompt, cwd);
-	const systemPrompt = conditionTemplate.replace("%CONDITION_PROMPT%", resolvedPrompt);
+  const resolvedPrompt = resolvePrompt(condition.prompt, cwd);
+  const systemPrompt = conditionTemplate.replace(
+    "%CONDITION_PROMPT%",
+    resolvedPrompt,
+  );
 
-	const resolvedModelRef = resolveModelAlias(condition.model, cwd);
-	const { provider: specifiedProvider, modelId } = parseModelRef(resolvedModelRef);
+  const resolvedModelRef = resolveModelAlias(condition.model, cwd);
+  const { provider: specifiedProvider, modelId } =
+    parseModelRef(resolvedModelRef);
 
-	const model = specifiedProvider
-		? ctx.modelRegistry.find(specifiedProvider, modelId)
-		: ctx.modelRegistry.getAll().find((m) => m.id === modelId);
+  const model = specifiedProvider
+    ? ctx.modelRegistry.find(specifiedProvider, modelId)
+    : ctx.modelRegistry.getAll().find((m) => m.id === modelId);
 
-	if (!model) {
-		ctx.ui.notify(`Condition model "${condition.model}" (resolved to "${resolvedModelRef}") not found in registry`, "error");
-		return;
-	}
+  if (!model) {
+    ctx.ui.notify(
+      `Condition model "${condition.model}" (resolved to "${resolvedModelRef}") not found in registry`,
+      "error",
+    );
+    return;
+  }
 
-	const evaluateTool = createEvaluateConditionTool(cwd, workflowId);
+  const evaluateTool = createEvaluateConditionTool(cwd, workflowId);
 
-	const loader = new DefaultResourceLoader({
-		cwd,
-		systemPromptOverride: () => systemPrompt,
-		skillsOverride: () => ({ skills: [], diagnostics: [] }),
-	});
-	await loader.reload();
+  const loader = new DefaultResourceLoader({
+    cwd,
+    systemPromptOverride: () => systemPrompt,
+    skillsOverride: () => ({ skills: [], diagnostics: [] }),
+  });
+  await loader.reload();
 
-	const { session } = await createAgentSession({
-		cwd,
-		model,
-		thinkingLevel: "off",
-		tools: createCodingTools(cwd),
-		customTools: [evaluateTool],
-		resourceLoader: loader,
-		sessionManager: SessionManager.inMemory(),
-		settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
-		modelRegistry: ctx.modelRegistry,
-	});
-	// Apply test override if set
-	const streamOverride = getConditionStreamFnOverride();
-	if (streamOverride) {
-		session.agent.streamFn = streamOverride;
-	}
+  const { session } = await createAgentSession({
+    cwd,
+    model,
+    thinkingLevel: "off",
+    tools: createCodingTools(cwd),
+    customTools: [evaluateTool],
+    resourceLoader: loader,
+    sessionManager: SessionManager.inMemory(),
+    settingsManager: SettingsManager.inMemory({
+      compaction: { enabled: false },
+    }),
+    modelRegistry: ctx.modelRegistry,
+  });
+  // Apply test override if set
+  const streamOverride = getConditionStreamFnOverride();
+  if (streamOverride) {
+    session.agent.streamFn = streamOverride;
+  }
 
-	try {
-		await session.prompt(resolvedPrompt);
-	} finally {
-		session.dispose();
-	}
+  try {
+    await session.prompt(resolvedPrompt);
+  } finally {
+    session.dispose();
+  }
 }
 
 export async function evaluateCommandCondition(
-	condition: CommandCondition,
-	cwd: string,
-	workflowId: string,
-	ctx: ExtensionContext,
+  condition: CommandCondition,
+  cwd: string,
+  workflowId: string,
+  ctx: ExtensionContext,
 ): Promise<void> {
-	const fn = getConditionCommand(condition.command);
-	if (!fn) {
-		ctx.ui.notify(`Command "${condition.command}" not found in registry`, "error");
-		return;
-	}
+  const fn = getConditionCommand(condition.command);
+  if (!fn) {
+    ctx.ui.notify(
+      `Command "${condition.command}" not found in registry`,
+      "error",
+    );
+    return;
+  }
 
-	try {
-		const commandCtx: CommandContext = { cwd, workflowId, ctx };
-		await fn(commandCtx, condition.args);
-	} catch (e) {
-		ctx.ui.notify(`Command "${condition.command}" failed: ${(e as Error).message}`, "warning");
-	}
+  try {
+    const commandCtx: CommandContext = { cwd, workflowId, ctx, ui: ctx.ui };
+    await fn(commandCtx, condition.args);
+  } catch (e) {
+    ctx.ui.notify(
+      `Command "${condition.command}" failed: ${(e as Error).message}`,
+      "warning",
+    );
+  }
 }

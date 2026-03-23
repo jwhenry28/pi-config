@@ -1,0 +1,25 @@
+name: CFG Feature Implementation
+steps:
+  - name: Brainstorm
+    model: smart
+    prompt: "@development/brainstorm.md"
+    skills:
+      - brainstorming
+    approval: true
+
+  - name: Plan
+    model: smart
+    prompt: "@development/plan.md"
+    skills:
+      - writing-plans
+
+  - name: Implement
+    model: smart
+    prompt: "@development/implement.md"
+    skills:
+      - executing-plans
+    conditions:
+      - command: check-todos-complete
+        args:
+          memoryKey: plan-todo
+        jump: Implement

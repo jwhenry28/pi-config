@@ -29,7 +29,14 @@ One command per line. Parameters use `key='value'` format (single-quoted). Blank
 | `spawn fauna` | `name` (required), `position` (required) | `spawn fauna name='wolf' position='(200, 300)'` |
 | `advance` | `frames` (required), `duration` (optional, default `16.67`ms) | `advance frames='300' duration='33.33'` |
 | `click` | `position` (required), `type` (optional, default `screen`) | `click position='(200, 300)' type='world'` |
+| `query` | `type` (required), `name` (optional), `verbose` (optional, default `0`) | `query type='flora' name='LoamPlant' verbose='1'` |
 | `screenshot` | `position` (required), `name` (optional) | `screenshot position='(200, 300)' name='result'` |
+
+**Type (query):** Entity type to search for. One of: `flora`, `fauna`, `ecosystem`, `mineral`, `creature`, `entity`. Case-insensitive.
+
+**Name (query):** Optional case-insensitive exact match filter on entity name.
+
+**Verbose (query):** `0` = count only (default), `1` = count + names, `2` = count + names + positions.
 
 **Position format:** `(x, y)` — e.g. `'(100, 250.5)'`
 
@@ -51,23 +58,39 @@ advance frames='300'
 screenshot position='(225, 200)' name='interaction_test'
 ```
 
+## Line Numbers
+
+Every `DebugCommand` carries a `LineNumber` property (1-indexed) set by the parser. Hand-constructed commands default to `0`.
+
+The `query` command prefixes its output with the line number when available:
+```
+[line 11]: query flora: found 18 entities
+```
+
+When `LineNumber` is `0` (hand-constructed in tests), the prefix is omitted:
+```
+query flora: found 18 entities
+```
+
 ## Architecture
 
 ```
 genesis/src/simulation/
-├── commands/DebugCommand.cs      # Command classes: SpawnFaunaCommand, AdvanceCommand, ClickCommand, ScreenshotCommand
+├── commands/DebugCommand.cs      # Base class (LineNumber) + command classes: SpawnFaunaCommand, AdvanceCommand, ClickCommand, QueryCommand, ScreenshotCommand
 ├── parser/DebugScriptParser.cs   # Text → List<DebugCommand> (pure, no MonoGame dependency)
 ├── parser/DebugScriptParseException.cs
-├── SimulationScript.cs           # Static execute methods: ExecuteSpawnFauna, ExecuteAdvance, ExecuteClick
-└── GameSimulation.cs             # GameSimulation : Game1 — orchestrates parse + execute + screenshot
+├── SimulationScript.cs           # Static execute methods: ExecuteSpawnFauna, ExecuteAdvance, ExecuteClick, ExecuteQuery
+└── GameSimulation.cs             # GameSimulation : Game1 — orchestrates parse + execute + screenshot + query
 ```
 
 `Program.cs` routes `--debug-script <path>` → `GameSimulation.RunScript()`.
 
+**Query output:** `ExecuteQuery` writes to `Console.Out` (or an injected `TextWriter` for testing) — not the diagnostic logger. This is intentional: query output is the command's primary purpose, distinct from diagnostic logging.
+
 ## Adding a New Command
 
-1. Add a new class extending `DebugCommand` in `commands/DebugCommand.cs`
-2. Add a `Parse___Command` method in `parser/DebugScriptParser.cs` and wire it into the keyword switch
+1. Add a new class extending `DebugCommand` in `commands/DebugCommand.cs` — accept `int lineNumber = 0` and pass to `base(lineNumber)`
+2. Add a `Parse___Command` method in `parser/DebugScriptParser.cs` and wire it into the keyword switch — pass `lineNumber` to the command constructor
 3. Add a `Execute___` method in `SimulationScript.cs` (if pure logic) or handle in `GameSimulation.RunScript` (if needs graphics)
 4. Add the new case to the `switch` in `GameSimulation.RunScript()`
 
