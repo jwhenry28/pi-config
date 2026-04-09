@@ -12,6 +12,7 @@ import {
   type ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 import type { PromptCondition, CommandCondition } from "./types.js";
+import { extractUsageFromMessage, type TokenUsage } from "./diagnostics.js";
 
 /** Global override for testing — replaces the streamFn on condition evaluation sessions.
  *  Uses globalThis to ensure same instance across module boundaries (vitest + dynamic imports). */
@@ -98,7 +99,7 @@ export async function evaluateCondition(
   cwd: string,
   workflowId: string,
   ctx: ExtensionContext,
-): Promise<void> {
+): Promise<TokenUsage | null> {
   const resolvedPrompt = resolvePrompt(condition.prompt, cwd);
   const systemPrompt = conditionTemplate.replace(
     "%CONDITION_PROMPT%",
@@ -118,7 +119,7 @@ export async function evaluateCondition(
       `Condition model "${condition.model}" (resolved to "${resolvedModelRef}") not found in registry`,
       "error",
     );
-    return;
+    return null;
   }
 
   const evaluateTool = createEvaluateConditionTool(cwd, workflowId);
@@ -151,6 +152,20 @@ export async function evaluateCondition(
 
   try {
     await session.prompt(resolvedPrompt);
+    // Sum usage from all assistant messages in the ephemeral session
+    const messages = session.messages;
+    let totalUsage: TokenUsage = { input: 0, output: 0, totalTokens: 0, cost: 0 };
+    let hasUsage = false;
+    for (const msg of messages) {
+      const usage = extractUsageFromMessage(msg);
+      if (!usage) continue;
+      totalUsage.input += usage.input;
+      totalUsage.output += usage.output;
+      totalUsage.totalTokens += usage.totalTokens;
+      totalUsage.cost += usage.cost;
+      hasUsage = true;
+    }
+    return hasUsage ? totalUsage : null;
   } finally {
     session.dispose();
   }
@@ -161,14 +176,14 @@ export async function evaluateCommandCondition(
   cwd: string,
   workflowId: string,
   ctx: ExtensionContext,
-): Promise<void> {
+): Promise<TokenUsage | null> {
   const fn = getConditionCommand(condition.command);
   if (!fn) {
     ctx.ui.notify(
       `Command "${condition.command}" not found in registry`,
       "error",
     );
-    return;
+    return null;
   }
 
   try {
@@ -180,4 +195,5 @@ export async function evaluateCommandCondition(
       "warning",
     );
   }
+  return null;
 }

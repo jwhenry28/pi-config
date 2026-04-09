@@ -22,6 +22,7 @@ import {
 	isMaxExecutionsReached,
 } from "./runner.js";
 import { writeKey } from "../memory/store.js";
+import { recordStepUsage, extractUsageFromMessage, completeDiagnostics } from "./diagnostics.js";
 import "./commands/check-if-sam-unhealthy.js";
 import "./commands/check-todos-complete.js";
 import "./commands/ask-user.js";
@@ -37,6 +38,7 @@ export default function workflowExtension(pi: ExtensionAPI) {
 		originalModelId: null,
 		originalModules: null,
 		pendingConditionIndex: null,
+		errorPaused: false,
 	};
 
 	registerWorkflowCommand(pi, state);
@@ -93,6 +95,17 @@ async function handleWorkflowContinue(
 ): Promise<void> {
 	if (!state.active) {
 		ctx.ui.notify("No workflow is running", "warning");
+		return;
+	}
+
+	if (state.errorPaused) {
+		state.errorPaused = false;
+		// Decrement execution count — the errored run didn't produce useful output
+		const step = currentStep(state);
+		if (step && state.active.executionCounts[step.name] > 0) {
+			state.active.executionCounts[step.name]--;
+		}
+		await runCurrentStep(pi, state, ctx);
 		return;
 	}
 
@@ -173,7 +186,9 @@ async function handleWorkflowAbort(
 	}
 
 	const workflowName = state.active.config.name;
+	completeDiagnostics(state.cwd, state.active.id, "aborted");
 	state.active = null;
+	state.errorPaused = false;
 	updateStatus(state, ctx);
 	await restoreOriginalModules(pi, state);
 	await restoreOriginalModel(pi, state, ctx);
@@ -315,6 +330,17 @@ function registerWorkflowEvents(pi: ExtensionAPI, state: WorkflowState): void {
 			return;
 		}
 
+		// If the agent encountered an error (e.g., API overloaded), halt the workflow.
+		// Don't advance — let the user retry with /workflow continue or abort.
+		if (lastAssistant && (lastAssistant as any).stopReason === "error") {
+			state.errorPaused = true;
+			ctx.ui.notify(
+				`⏸️ Workflow paused (agent error). Use \`/workflow continue\` to retry the current step, or \`/workflow abort\` to cancel.`,
+				"warning",
+			);
+			return;
+		}
+
 		await handlePostStep(pi, state, ctx, step);
 	});
 
@@ -322,5 +348,25 @@ function registerWorkflowEvents(pi: ExtensionAPI, state: WorkflowState): void {
 		if (!state.active) return;
 		if (state.advancing) return;
 		await handleWorkflowAbort(pi, state, ctx, "aborted (session switched)", "warning");
+	});
+
+	pi.on("turn_end", async (event) => {
+		if (!state.active) return;
+		const step = currentStep(state);
+		if (!step) return;
+		if (!isPromptStep(step)) return;
+
+		const usage = extractUsageFromMessage(event.message);
+		if (!usage) return;
+
+		const execution = state.active.executionCounts[step.name] ?? 0;
+		recordStepUsage(
+			state.cwd,
+			state.active.id,
+			step.name,
+			execution,
+			step.model,
+			usage,
+		);
 	});
 }

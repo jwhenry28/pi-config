@@ -63,6 +63,28 @@ describe("todo extension (component)", () => {
     expect(listNotification).toBeDefined();
   });
 
+  it("completes a todo via slash command", async () => {
+    test = await createComponentTest();
+
+    // 1. Add a todo
+    test.sendUserMessage("/todo add complete-me A task to complete");
+    await test.waitForIdle();
+
+    // 2. Verify it was added
+    expect(test.notifications).toContainEqual(
+      expect.objectContaining({ message: 'Added todo "complete-me"' })
+    );
+
+    // 3. Complete the todo (ui.confirm returns false by default in component tests)
+    // The default confirm mock returns false, so the command will be cancelled.
+    test.sendUserMessage("/todo complete complete-me");
+    await test.waitForIdle();
+
+    expect(test.notifications).toContainEqual(
+      expect.objectContaining({ message: "Cancelled" })
+    );
+  });
+
   it("designs a todo via slash command", async () => {
     test = await createComponentTest({
       initialSkills: [{ name: "brainstorming", content: BRAINSTORMING_SKILL }],

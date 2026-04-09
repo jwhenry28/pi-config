@@ -83,4 +83,5 @@ export interface WorkflowState {
 	originalModelId: string | null;
 	originalModules: string[] | null;
 	pendingConditionIndex: number | null;
+	errorPaused: boolean;
 }

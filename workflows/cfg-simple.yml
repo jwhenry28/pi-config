@@ -1,4 +1,4 @@
-name: Feature Implementation
+name: CFG Simple Feature
 steps:
   - name: Brainstorm
     model: smart
@@ -10,17 +10,24 @@ steps:
 
   - name: Plan
     model: smart
-    prompt: "@development/plan.md"
-    skills:
-      - writing-plans
+    prompt: "@development/simple-plan.md"
 
   - name: Implement
-    model: smart
-    prompt: "@development/implement.md"
+    model: general
+    prompt: "@development/simple-implement.md"
     skills:
-      - executing-plans
+      - knowing-clean-code
     conditions:
       - command: check-todos-complete
         args:
           memoryKey: plan-todo
         jump: Implement
+
+  - name: Review
+    model: smart
+    prompt: "@development/review.md"
+    skills:
+      - knowing-clean-code
+      - knowing-dry
+      - knowing-yagni
+    approval: true

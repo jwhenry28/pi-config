@@ -117,7 +117,7 @@ describe("timer extension (component)", () => {
   });
 
   it("set_timer tool creates a timer and returns confirmation", async () => {
-    test = await createComponentTest();
+    test = await createComponentTest({ shownModules: ["timer"] });
 
     test.sendUserMessage("set a timer for 5 minutes");
 
@@ -137,7 +137,7 @@ describe("timer extension (component)", () => {
   });
 
   it("set_timer tool with invalid duration returns error", async () => {
-    test = await createComponentTest();
+    test = await createComponentTest({ shownModules: ["timer"] });
 
     test.sendUserMessage("set a timer");
 

@@ -3,11 +3,24 @@ import type { AutocompleteItem } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { clearAll, listTimers } from "./state.js";
 import { handleTimerCommand } from "./commands.js";
-import { executeSetTimer, executeListTimers, executeCancelTimer } from "./tools.js";
+import {
+  executeSetTimer,
+  executeListTimers,
+  executeCancelTimer,
+} from "./tools.js";
+import { moduleTag } from "../modules/api.js";
 
 // Re-export for tests
-export { handleTimerCommand, parseSetArgs, type ParsedSetArgs } from "./commands.js";
-export { executeSetTimer, executeListTimers, executeCancelTimer } from "./tools.js";
+export {
+  handleTimerCommand,
+  parseSetArgs,
+  type ParsedSetArgs,
+} from "./commands.js";
+export {
+  executeSetTimer,
+  executeListTimers,
+  executeCancelTimer,
+} from "./tools.js";
 
 // ── Extension registration ────────────────────────────────────────
 
@@ -24,44 +37,65 @@ export default function timerExtension(pi: ExtensionAPI) {
     },
   });
 
-  pi.registerTool({
-    name: "set_timer",
-    label: "Set Timer",
-    description:
-      "Set a timer that sends a prompt to the agent after a specified delay. " +
-      "Duration format: e.g. 5m, 60m, 2h. " +
-      "If recurring is true, the prompt is sent repeatedly at the given interval.",
-    parameters: Type.Object({
-      duration: Type.String({ description: 'Timer duration, e.g. "5m", "60m", "2h"' }),
-      prompt: Type.String({ description: "Message to send when the timer fires" }),
-      recurring: Type.Optional(Type.Boolean({ description: "If true, fire repeatedly (default: false)" })),
+  pi.registerTool(
+    moduleTag(pi, "timer", {
+      name: "set_timer",
+      label: "Set Timer",
+      description:
+        "Set a timer that sends a prompt to the agent after a specified delay. " +
+        "Duration format: e.g. 5m, 60m, 2h. " +
+        "If recurring is true, the prompt is sent repeatedly at the given interval.",
+      parameters: Type.Object({
+        duration: Type.String({
+          description: 'Timer duration, e.g. "5m", "60m", "2h"',
+        }),
+        prompt: Type.String({
+          description: "Message to send when the timer fires",
+        }),
+        recurring: Type.Optional(
+          Type.Boolean({
+            description: "If true, fire repeatedly (default: false)",
+          }),
+        ),
+      }),
+      async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+        return executeSetTimer(
+          params as { duration: string; prompt: string; recurring?: boolean },
+          ctx.ui,
+          pi,
+        );
+      },
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      return executeSetTimer(params as { duration: string; prompt: string; recurring?: boolean }, ctx.ui, pi);
-    },
-  });
+  );
 
-  pi.registerTool({
-    name: "list_timers",
-    label: "List Timers",
-    description: "List all active timers with their IDs, durations, types, and prompts.",
-    parameters: Type.Object({}),
-    async execute(_toolCallId, _params, _signal, _onUpdate, _ctx) {
-      return executeListTimers();
-    },
-  });
-
-  pi.registerTool({
-    name: "cancel_timer",
-    label: "Cancel Timer",
-    description: "Cancel an active timer by its ID.",
-    parameters: Type.Object({
-      id: Type.String({ description: "Timer ID to cancel (from set_timer or list_timers)" }),
+  pi.registerTool(
+    moduleTag(pi, "timer", {
+      name: "list_timers",
+      label: "List Timers",
+      description:
+        "List all active timers with their IDs, durations, types, and prompts.",
+      parameters: Type.Object({}),
+      async execute(_toolCallId, _params, _signal, _onUpdate, _ctx) {
+        return executeListTimers();
+      },
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      return executeCancelTimer((params as { id: string }).id, ctx.ui);
-    },
-  });
+  );
+
+  pi.registerTool(
+    moduleTag(pi, "timer", {
+      name: "cancel_timer",
+      label: "Cancel Timer",
+      description: "Cancel an active timer by its ID.",
+      parameters: Type.Object({
+        id: Type.String({
+          description: "Timer ID to cancel (from set_timer or list_timers)",
+        }),
+      }),
+      async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+        return executeCancelTimer((params as { id: string }).id, ctx.ui);
+      },
+    }),
+  );
 }
 
 // ── Autocompletion ────────────────────────────────────────────────
@@ -92,7 +126,8 @@ export function getTimerCompletions(prefix: string): AutocompleteItem[] | null {
     return filtered.length > 0
       ? filtered.map((e) => {
           const typeLabel = e.recurring ? "recurring" : "one-shot";
-          const truncated = e.prompt.length > 40 ? e.prompt.slice(0, 37) + "..." : e.prompt;
+          const truncated =
+            e.prompt.length > 40 ? e.prompt.slice(0, 37) + "..." : e.prompt;
           return {
             value: `cancel ${e.id}`,
             label: e.id,

@@ -31,6 +31,7 @@ import {
   resolvePluginSkillPath,
   parseSkillName,
 } from "./plugin-skills.js";
+import { createDiagnostics, completeDiagnostics, recordStepUsage, type TokenUsage } from "./diagnostics.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -375,6 +376,7 @@ export async function runCurrentStep(
 
   if (state.active.currentStepIndex === 0) {
     createMemoryDomain(state.cwd, state.active.id);
+    createDiagnostics(state.cwd, state.active.id, state.active.config.name);
   }
   if (isCommandStep(step)) {
     const fn = getStepCommand(step.command);
@@ -457,6 +459,7 @@ async function completeWorkflow(
     `✅ Workflow "${state.active!.config.name}" complete!${suffix}`,
     "info",
   );
+  completeDiagnostics(state.cwd, state.active!.id, "completed");
   state.active = null;
   updateStatus(state, ctx);
   state.advancing = false;
@@ -514,18 +517,29 @@ export async function evaluateConditions(
     // Clear previous result
     deleteEntry(state.cwd, workflowId, "workflow-condition-result");
 
+    let condUsage: TokenUsage | null = null;
     if (isCommandCondition(cond)) {
       ctx.ui.notify(
         `Evaluating condition ${i + 1}/${total}: command "${cond.command}"`,
         "info",
       );
-      await evaluateCommandCondition(cond, state.cwd, workflowId, ctx);
+      condUsage = await evaluateCommandCondition(cond, state.cwd, workflowId, ctx);
     } else {
       ctx.ui.notify(
         `Evaluating condition ${i + 1}/${total}: "${cond.prompt.slice(0, 60)}..."`,
         "info",
       );
-      await evaluateCondition(cond, state.cwd, workflowId, ctx);
+      condUsage = await evaluateCondition(cond, state.cwd, workflowId, ctx);
+    }
+
+    // Record condition evaluation tokens against the current step
+    if (condUsage) {
+      const condStep = currentStep(state);
+      if (condStep) {
+        const execution = state.active!.executionCounts[condStep.name] ?? 0;
+        const condModel = isPromptCondition(cond) ? cond.model : "command";
+        recordStepUsage(state.cwd, workflowId, condStep.name, execution, condModel, condUsage);
+      }
     }
 
     // Read result from memory

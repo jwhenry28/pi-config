@@ -19,6 +19,8 @@ export interface ScriptedResponse {
   text?: string;
   toolCalls?: ScriptedToolCall[];
   thinking?: string;
+  /** If set, emits an error stream event with this message. Simulates API errors. */
+  error?: string;
 }
 
 // ── Dummy Model ────────────────────────────────────────────────────
@@ -236,10 +238,16 @@ export class MockStreamController {
       }
     }
 
-    const stopReason = response.toolCalls?.length ? "toolUse" : "stop";
-    partial.stopReason = stopReason;
-
-    const finalMessage: AssistantMessage = { ...partial, content: [...content] };
-    stream.push({ type: "done", reason: stopReason as any, message: finalMessage });
+    if (response.error) {
+      partial.stopReason = "error";
+      (partial as any).errorMessage = response.error;
+      const finalMessage = { ...partial, content: [...content] };
+      stream.push({ type: "error", reason: "error" as any, error: finalMessage });
+    } else {
+      const stopReason = response.toolCalls?.length ? "toolUse" : "stop";
+      partial.stopReason = stopReason;
+      const finalMessage = { ...partial, content: [...content] };
+      stream.push({ type: "done", reason: stopReason as any, message: finalMessage });
+    }
   }
 }

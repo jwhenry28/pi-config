@@ -5,6 +5,7 @@ steps:
     prompt: "@development/brainstorm.md"
     skills:
       - brainstorming
+    modules: ask
     approval: true
 
   - name: Plan
@@ -23,3 +24,12 @@ steps:
         args:
           memoryKey: plan-todo
         jump: Implement
+
+  - name: Review
+    model: smart
+    prompt: "@development/review.md"
+    skills:
+      - knowing-clean-code
+      - knowing-dry
+      - knowing-yagni
+    approval: true

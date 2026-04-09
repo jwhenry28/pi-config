@@ -476,6 +476,252 @@ This is FAKE_SKILL_CONTENT_FOR_TESTING.
     }, 30000);
   });
 
+  describe("error halt", () => {
+    it("pauses on agent error and resumes with /workflow continue", async () => {
+      test = await createComponentTest();
+      registerMockModel(test);
+      test.session.setAutoRetryEnabled(false);
+
+      writeWorkflow(test.cwd, "error-halt", {
+        name: "error-halt",
+        steps: [
+          { name: "Step1", model: "mock-model", prompt: "Do step 1" },
+          { name: "Step2", model: "mock-model", prompt: "Do step 2" },
+        ],
+      });
+
+      test.sendUserMessage("/workflow error-halt Test error handling");
+
+      // Step 1: simulate an API error
+      await test.mockAgentResponse({ error: "Overloaded" });
+      await new Promise(r => setTimeout(r, 300));
+
+      // Verify workflow did NOT advance — no Step2 marker
+      const markersAfterError = test.events.customMessages("workflow:step-marker");
+      expect(markersAfterError).toHaveLength(1);
+      expect(markersAfterError[0].details.stepName).toBe("Step1");
+
+      // Verify error pause notification was shown
+      expect(test.notifications).toContainEqual(
+        expect.objectContaining({
+          message: expect.stringContaining("Workflow paused (agent error)"),
+        })
+      );
+
+      // Retry with /workflow continue
+      test.sendUserMessage("/workflow continue");
+      await new Promise(r => setTimeout(r, 300));
+
+      // Step 1 retry succeeds
+      await test.mockAgentResponse({ text: "Step 1 done" });
+      await new Promise(r => setTimeout(r, 300));
+
+      // Step 2 runs and completes
+      await test.mockAgentResponse({ text: "Step 2 done" });
+      await test.waitForIdle();
+      await new Promise(r => setTimeout(r, 200));
+
+      // Verify both steps completed
+      const markers = test.events.customMessages("workflow:step-marker");
+      // Step1 ran twice (error + retry), Step2 ran once
+      expect(markers).toHaveLength(3);
+      expect(markers[0].details.stepName).toBe("Step1");
+      expect(markers[0].details.execution).toBe(1);
+      expect(markers[1].details.stepName).toBe("Step1");
+      expect(markers[1].details.execution).toBe(1); // decremented from 2 back to 1
+      expect(markers[2].details.stepName).toBe("Step2");
+
+      // Verify workflow completed
+      expect(test.notifications).toContainEqual(
+        expect.objectContaining({
+          message: expect.stringContaining('Workflow "error-halt" complete!'),
+        })
+      );
+    }, 30000);
+
+    it("aborts cleanly after error pause", async () => {
+      test = await createComponentTest();
+      registerMockModel(test);
+      test.session.setAutoRetryEnabled(false);
+
+      writeWorkflow(test.cwd, "error-abort", {
+        name: "error-abort",
+        steps: [
+          { name: "Step1", model: "mock-model", prompt: "Do step 1" },
+          { name: "Step2", model: "mock-model", prompt: "Do step 2" },
+        ],
+      });
+
+      test.sendUserMessage("/workflow error-abort Test error abort");
+
+      // Step 1: simulate an API error
+      await test.mockAgentResponse({ error: "Overloaded" });
+      await new Promise(r => setTimeout(r, 300));
+
+      // Verify workflow paused
+      expect(test.notifications).toContainEqual(
+        expect.objectContaining({
+          message: expect.stringContaining("Workflow paused (agent error)"),
+        })
+      );
+
+      // Abort the workflow
+      await test.runCommand("/workflow abort");
+      await test.waitForIdle();
+
+      // Verify workflow was aborted
+      expect(test.notifications).toContainEqual(
+        expect.objectContaining({
+          message: expect.stringContaining("aborted"),
+        })
+      );
+
+      // Verify no Step2 was executed
+      const markers = test.events.customMessages("workflow:step-marker");
+      expect(markers).toHaveLength(1);
+      expect(markers[0].details.stepName).toBe("Step1");
+    }, 15000);
+
+    it("handles repeated errors — re-pauses on second error, succeeds on third attempt", async () => {
+      test = await createComponentTest();
+      registerMockModel(test);
+      test.session.setAutoRetryEnabled(false);
+
+      writeWorkflow(test.cwd, "double-error", {
+        name: "double-error",
+        steps: [
+          { name: "Step1", model: "mock-model", prompt: "Do step 1" },
+          { name: "Step2", model: "mock-model", prompt: "Do step 2" },
+        ],
+      });
+
+      test.sendUserMessage("/workflow double-error Test double error");
+
+      // Step 1: first error
+      await test.mockAgentResponse({ error: "Overloaded" });
+      await new Promise(r => setTimeout(r, 300));
+
+      expect(test.notifications).toContainEqual(
+        expect.objectContaining({
+          message: expect.stringContaining("Workflow paused (agent error)"),
+        })
+      );
+
+      // First retry — another error
+      test.sendUserMessage("/workflow continue");
+      await new Promise(r => setTimeout(r, 300));
+
+      await test.mockAgentResponse({ error: "Overloaded again" });
+      await new Promise(r => setTimeout(r, 300));
+
+      // Should be paused again
+      const errorNotifs = test.notifications.filter(n =>
+        n.message.includes("Workflow paused (agent error)")
+      );
+      expect(errorNotifs.length).toBeGreaterThanOrEqual(2);
+
+      // Second retry — succeeds this time
+      test.sendUserMessage("/workflow continue");
+      await new Promise(r => setTimeout(r, 300));
+
+      await test.mockAgentResponse({ text: "Step 1 done" });
+      await new Promise(r => setTimeout(r, 300));
+
+      // Step 2 runs normally
+      await test.mockAgentResponse({ text: "Step 2 done" });
+      await test.waitForIdle();
+      await new Promise(r => setTimeout(r, 200));
+
+      // Verify workflow completed
+      expect(test.notifications).toContainEqual(
+        expect.objectContaining({
+          message: expect.stringContaining('Workflow "double-error" complete!'),
+        })
+      );
+
+      // Verify Step1 markers: error1, error2, success = 3 markers, but errored ones
+      // had their counts decremented, so the successful run shows execution 1
+      const markers = test.events.customMessages("workflow:step-marker");
+      const step1Markers = markers.filter((m: any) => m.details.stepName === "Step1");
+      expect(step1Markers).toHaveLength(3); // error, error, success
+
+      const step2Markers = markers.filter((m: any) => m.details.stepName === "Step2");
+      expect(step2Markers).toHaveLength(1);
+    }, 30000);
+
+    it("error on a step with conditions halts before condition evaluation", async () => {
+      test = await createComponentTest();
+      registerMockModel(test);
+      test.session.setAutoRetryEnabled(false);
+
+      writeTodo(test.cwd, "cond-error.md", [
+        { text: "Task A", checked: false },
+      ]);
+
+      writeWorkflow(test.cwd, "cond-error", {
+        name: "cond-error",
+        steps: [
+          {
+            name: "Work",
+            model: "mock-model",
+            prompt: "Do work",
+            maxExecutions: 5,
+            conditions: [
+              { command: "check-todos-complete", args: { todoFilepath: "cond-error.md" }, jump: "Work" },
+            ],
+          },
+          { name: "Done", model: "mock-model", prompt: "Finish" },
+        ],
+      });
+
+      test.sendUserMessage("/workflow cond-error Test condition error");
+
+      // Step 1: error — should halt before conditions are evaluated
+      await test.mockAgentResponse({ error: "Service unavailable" });
+      await new Promise(r => setTimeout(r, 300));
+
+      // Verify paused
+      expect(test.notifications).toContainEqual(
+        expect.objectContaining({
+          message: expect.stringContaining("Workflow paused (agent error)"),
+        })
+      );
+
+      // No condition results should have been emitted
+      const condResults = test.events.customMessages("workflow:condition-result");
+      expect(condResults).toHaveLength(0);
+
+      // Mark task complete before retry
+      writeTodo(test.cwd, "cond-error.md", [
+        { text: "Task A", checked: true },
+      ]);
+
+      // Retry with /workflow continue
+      test.sendUserMessage("/workflow continue");
+      await new Promise(r => setTimeout(r, 300));
+
+      // Step succeeds this time; condition evaluates (all checked → false → advance)
+      await test.mockAgentResponse({ text: "Work done" });
+      await new Promise(r => setTimeout(r, 300));
+
+      // Done step
+      await test.mockAgentResponse({ text: "Finished" });
+      await test.waitForIdle();
+      await new Promise(r => setTimeout(r, 200));
+
+      // Verify conditions were evaluated after retry
+      const condResultsAfter = test.events.customMessages("workflow:condition-result");
+      expect(condResultsAfter.length).toBeGreaterThanOrEqual(1);
+
+      // Verify workflow completed
+      expect(test.notifications).toContainEqual(
+        expect.objectContaining({
+          message: expect.stringContaining('Workflow "cond-error" complete!'),
+        })
+      );
+    }, 30000);
+  });
+
   describe("prompt file injection", () => {
     it("resolves @path prompt from file content", async () => {
       test = await createComponentTest({
@@ -923,6 +1169,23 @@ This is FAKE_SKILL_CONTENT_FOR_TESTING.
     it("research.yml — prompt condition with real evaluation", async () => {
       test = await createComponentTest({ shownModules: ["memory"] });
       registerMockModel(test);
+
+      writeWorkflow(test.cwd, "research", {
+        name: "research",
+        steps: [
+          { name: "Clarify", model: "mock-model", prompt: "Clarify the research question", approval: true },
+          { name: "Search", model: "mock-model", prompt: "Search for relevant sources" },
+          { name: "Deep Dive", model: "mock-model", prompt: "Deep dive into the topic" },
+          {
+            name: "Synthesize",
+            model: "mock-model",
+            prompt: "Synthesize findings",
+            conditions: [
+              { prompt: "Is more research needed?", model: "mock-model", jump: "Search" },
+            ],
+          },
+        ],
+      });
 
       installConditionOverride(() => ({
         result: "false",

@@ -1,8 +1,9 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { handleAdd } from "../add.js";
-import { handleComplete } from "../complete.js";
-import { readStore } from "../../memory/store.js";
+import { handleComplete, getTodoCompletions } from "../complete.js";
+import { readStore, ensureStore } from "../../memory/store.js";
 import { makeStoreName, makeMockTex, purgeStore } from "../../testutils/index.js";
+import type { AutocompleteItem } from "@mariozechner/pi-tui";
 
 describe("handleComplete", () => {
   const cwd = process.cwd();
@@ -79,3 +80,100 @@ describe("handleComplete", () => {
     expect(notifications[0].msg).toContain("not found");
   });
 });
+
+describe("getTodoCompletions", () => {
+  const cwd = process.cwd();
+  const stores: string[] = [];
+
+  afterEach(() => {
+    for (const store of stores) purgeStore(cwd, store);
+    stores.length = 0;
+  });
+
+  it("returns null when store does not exist", () => {
+    const store = makeStoreName("test-todo-");
+    stores.push(store);
+    const result = getTodoCompletions(cwd, store, "complete", "");
+    expect(result).toBeNull();
+  });
+
+  it("returns null when store has no entries", () => {
+    const store = makeStoreName("test-todo-");
+    stores.push(store);
+    ensureStore(cwd, store);
+    const result = getTodoCompletions(cwd, store, "complete", "");
+    expect(result).toBeNull();
+  });
+
+  it("returns all todos when prefix is empty", async () => {
+    const store = makeStoreName("test-todo-");
+    stores.push(store);
+    const { tex } = makeMockTex(cwd, store);
+    await handleAdd(["add", "alpha", "First", "task"], tex);
+    await handleAdd(["add", "beta", "Second", "task"], tex);
+
+    const result = getTodoCompletions(cwd, store, "complete", "");
+    expect(result).not.toBeNull();
+    expect(result).toHaveLength(2);
+    const values = result!.map((r: AutocompleteItem) => r.label);
+    expect(values).toContain("alpha");
+    expect(values).toContain("beta");
+  });
+
+  it("filters todos by prefix", async () => {
+    const store = makeStoreName("test-todo-");
+    stores.push(store);
+    const { tex } = makeMockTex(cwd, store);
+    await handleAdd(["add", "alpha", "First", "task"], tex);
+    await handleAdd(["add", "beta", "Second", "task"], tex);
+
+    const result = getTodoCompletions(cwd, store, "complete", "al");
+    expect(result).not.toBeNull();
+    expect(result).toHaveLength(1);
+    expect(result![0].label).toBe("alpha");
+    expect(result![0].value).toBe("complete alpha");
+    expect(result![0].description).toBe("First task");
+  });
+
+  it("returns null when no todos match prefix", async () => {
+    const store = makeStoreName("test-todo-");
+    stores.push(store);
+    const { tex } = makeMockTex(cwd, store);
+    await handleAdd(["add", "alpha", "First", "task"], tex);
+
+    const result = getTodoCompletions(cwd, store, "complete", "xyz");
+    expect(result).toBeNull();
+  });
+
+  it("prefixes value with the given subcommand", async () => {
+    const store = makeStoreName("test-todo-");
+    stores.push(store);
+    const { tex } = makeMockTex(cwd, store);
+    await handleAdd(["add", "my-task", "Fix", "the", "bug"], tex);
+
+    const result = getTodoCompletions(cwd, store, "complete", "my");
+    expect(result).not.toBeNull();
+    expect(result![0]).toEqual({
+      value: "complete my-task",
+      label: "my-task",
+      description: "Fix the bug",
+    });
+  });
+
+  it("uses design subcommand in value when specified", async () => {
+    const store = makeStoreName("test-todo-");
+    stores.push(store);
+    const { tex } = makeMockTex(cwd, store);
+    await handleAdd(["add", "my-task", "Fix", "the", "bug"], tex);
+
+    const result = getTodoCompletions(cwd, store, "design", "my");
+    expect(result).not.toBeNull();
+    expect(result![0]).toEqual({
+      value: "design my-task",
+      label: "my-task",
+      description: "Fix the bug",
+    });
+  });
+});
+
+

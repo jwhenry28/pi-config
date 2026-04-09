@@ -5,7 +5,7 @@ import type { AutocompleteItem } from "@mariozechner/pi-tui";
 import { handleAdd } from "./add.js";
 import { handleList } from "./list.js";
 import { handleDesign, type Skills } from "./design.js";
-import { handleComplete } from "./complete.js";
+import { handleComplete, getTodoCompletions } from "./complete.js";
 import { registerTodoTool } from "./tool.js";
 import { TODO_STORE, type TodoExecutionContext } from "./constants.js";
 
@@ -21,9 +21,11 @@ export default function todoExtension(pi: ExtensionAPI) {
   registerTodoTool(pi);
 
   let allSkills: Skills = [];
+  let extensionCwd: string | null = null;
 
   pi.on("session_start", async (_event, ctx) => {
-    const result = loadSkills({ cwd: getCwd(ctx) });
+    extensionCwd = getCwd(ctx);
+    const result = loadSkills({ cwd: extensionCwd });
     allSkills = result.skills;
   });
 
@@ -31,8 +33,19 @@ export default function todoExtension(pi: ExtensionAPI) {
     description: "Manage todo items: add, list, design, complete",
     getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
       const trimmed = prefix.trimStart();
-      // Only complete the first word (subcommand), not subsequent arguments
-      if (trimmed.includes(" ")) return null;
+
+      if (trimmed.includes(" ")) {
+        if (!extensionCwd) return null;
+        for (const sub of ["complete", "design"]) {
+          const subPrefix = `${sub} `;
+          if (trimmed.startsWith(subPrefix)) {
+            const partial = trimmed.slice(subPrefix.length);
+            return getTodoCompletions(extensionCwd, TODO_STORE, sub, partial);
+          }
+        }
+        return null;
+      }
+
       const filtered = SUBCOMMANDS.filter((item) => item.value.startsWith(trimmed));
       return filtered.length > 0 ? filtered : null;
     },

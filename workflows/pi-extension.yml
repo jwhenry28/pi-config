@@ -7,6 +7,7 @@ steps:
       - brainstorming
       - writing-pi-extensions
     approval: true
+    modules: ask
 
   - name: Plan
     model: smart
@@ -66,4 +67,3 @@ steps:
       - writing-pi-extensions
       - writing-pi-tests
     approval: true
-
