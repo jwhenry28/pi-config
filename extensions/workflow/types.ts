@@ -3,9 +3,12 @@ import type { Skill } from "@mariozechner/pi-coding-agent";
 
 // --- Conditions ---
 
+export type WorkflowThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
 export interface PromptCondition {
 	prompt: string;
 	model: string;
+	thinking?: WorkflowThinkingLevel;
 	jump: string;
 }
 
@@ -22,6 +25,7 @@ export type StepCondition = PromptCondition | CommandCondition;
 export interface PromptStep {
 	name: string;
 	model: string;
+	thinking?: WorkflowThinkingLevel;
 	prompt: string;
 	skills?: string[];
 	modules?: string[];
@@ -81,6 +85,7 @@ export interface WorkflowState {
 	advancing: boolean;
 	savedCommandCtx: ExtensionCommandContext | null;
 	originalModelId: string | null;
+	originalThinkingLevel: WorkflowThinkingLevel | null;
 	originalModules: string[] | null;
 	pendingConditionIndex: number | null;
 	errorPaused: boolean;

@@ -2,6 +2,7 @@ name: CFG Feature Implementation
 steps:
   - name: Brainstorm
     model: smart
+    thinking: high
     prompt: "@development/brainstorm.md"
     skills:
       - brainstorming

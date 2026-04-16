@@ -12,7 +12,7 @@ import { setConditionStreamFnOverride } from "../evaluator.js";
  */
 export function registerMockModel(test: ComponentTestSession): void {
   const registry = test.session.modelRegistry as any;
-  const model = createDummyModel();
+  const model = { ...createDummyModel(), reasoning: true };
 
   if (!registry.models.some((m: any) => m.id === model.id)) {
     registry.models.push(model);

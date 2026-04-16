@@ -4,7 +4,7 @@ import { WORKFLOWS_DIR } from "../shared/paths.js";
 import { parse as parseYaml } from "yaml";
 import type { ExtensionContext, ModelRegistry } from "@mariozechner/pi-coding-agent";
 import type { Skill } from "@mariozechner/pi-coding-agent";
-import type { WorkflowConfig, WorkflowStep, PromptStep, CommandStep, PromptCondition, CommandCondition } from "./types.js";
+import type { WorkflowConfig, WorkflowStep, PromptStep, CommandStep, PromptCondition, CommandCondition, WorkflowThinkingLevel } from "./types.js";
 import { isPromptStep, isCommandStep, isPromptCondition, isCommandCondition } from "./types.js";
 import { resolveModelAlias, parseModelRef } from "./models.js";
 import { listYamlBasenames } from "../shared/yaml-files.js";
@@ -135,7 +135,7 @@ function parseCommandStep(
 	raw: RawRecord, stepNum: number, stepName: string,
 	maxExecutions: number, conditions: (PromptCondition | CommandCondition)[] | undefined,
 ): CommandStep {
-	const promptOnlyFields = ["model", "prompt", "skills", "modules", "approval"];
+	const promptOnlyFields = ["model", "thinking", "prompt", "skills", "modules", "approval"];
 	for (const field of promptOnlyFields) {
 		if (raw[field] != null) {
 			throw new Error(`Step ${stepNum} "${stepName}": '${field}' is not allowed with 'command'`);
@@ -159,6 +159,7 @@ function parsePromptStep(
 	return {
 		name: stepName,
 		model: resolveModelAlias(raw.model as string, cwd),
+		thinking: parseThinkingLevel(raw.thinking, `Step ${stepNum} "${stepName}"`),
 		prompt: raw.prompt as string,
 		skills: (raw.skills as string[]) ?? [],
 		modules: parseModules(raw.modules, stepNum),
@@ -184,6 +185,7 @@ function parseCondition(raw: RawRecord, stepNum: number, condNum: number, cwd: s
 
 	if (hasCommand) {
 		if (raw.model) throw new Error(`Step ${stepNum}, condition ${condNum}: 'model' is not allowed with 'command'`);
+		if (raw.thinking != null) throw new Error(`Step ${stepNum}, condition ${condNum}: 'thinking' is not allowed with 'command'`);
 		return {
 			command: raw.command as string,
 			args: (raw.args as Record<string, string>) ?? undefined,
@@ -195,8 +197,26 @@ function parseCondition(raw: RawRecord, stepNum: number, condNum: number, cwd: s
 	return {
 		prompt: raw.prompt as string,
 		model: resolveModelAlias(raw.model as string, cwd),
+		thinking: parseThinkingLevel(raw.thinking, `Step ${stepNum}, condition ${condNum}`),
 		jump: raw.jump as string,
 	} satisfies PromptCondition;
+}
+
+// --- Shared parsing helpers ---
+
+function parseThinkingLevel(value: unknown, location: string): WorkflowThinkingLevel | undefined {
+	if (value == null) return undefined;
+	if (
+		value === "off" ||
+		value === "minimal" ||
+		value === "low" ||
+		value === "medium" ||
+		value === "high" ||
+		value === "xhigh"
+	) {
+		return value;
+	}
+	throw new Error(`${location}: 'thinking' must be one of off, minimal, low, medium, high, xhigh`);
 }
 
 // --- Shared parsing helpers ---
