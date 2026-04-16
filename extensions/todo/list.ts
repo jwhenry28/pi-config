@@ -17,20 +17,34 @@ export function formatTodoList(cwd: string, storeName: string = TODO_STORE): str
   if (keysResult.startsWith("Error") || keysResult.startsWith("Domain")) {
     return null;
   }
-  const keys = keysResult.split("\n");
-  const lines: string[] = [];
-  for (const key of keys) {
-    const raw = getEntry(cwd, storeName, key);
-    if (raw.startsWith("Error")) continue;
-    try {
-      const todo = JSON.parse(raw) as Todo;
-      const tag = todo.design ? " [has design]" : "";
-      lines.push(`• ${todo.name} — ${todo.description}${tag}`);
-    } catch {
-      lines.push(`• ${key} — (invalid data)`);
-    }
-  }
-  return lines.length > 0 ? lines.join("\n") : null;
+
+  const entries = keysResult
+    .split("\n")
+    .map((key) => key.trim())
+    .filter(Boolean)
+    .map((key) => {
+      const raw = getEntry(cwd, storeName, key);
+      if (raw.startsWith("Error")) {
+        return null;
+      }
+
+      try {
+        const todo = JSON.parse(raw) as Todo;
+        return {
+          sortKey: todo.name.toLowerCase(),
+          line: `• ${todo.name} — ${todo.description}${todo.design ? " [has design]" : ""}`,
+        };
+      } catch {
+        return {
+          sortKey: key.toLowerCase(),
+          line: `• ${key} — (invalid data)`,
+        };
+      }
+    })
+    .filter((entry): entry is { sortKey: string; line: string } => entry !== null)
+    .sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+
+  return entries.length > 0 ? entries.map((entry) => entry.line).join("\n") : null;
 }
 
 export async function handleList(tex: TodoExecutionContext): Promise<void> {

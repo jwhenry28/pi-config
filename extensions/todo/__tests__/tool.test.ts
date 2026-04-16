@@ -35,7 +35,7 @@ describe("executeTodoList", () => {
 
     expect(result.content.length).toBe(1);
     expect(result.content[0].type).toBe("text");
-    expect(result.content[0].text).toContain("• task-a — First task");
-    expect(result.content[0].text).toContain("• task-b — Second task");
+    expect(result.content[0].text).toContain("• 1-task-a — First task");
+    expect(result.content[0].text).toContain("• 2-task-b — Second task");
   });
 });

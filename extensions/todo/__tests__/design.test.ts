@@ -72,9 +72,9 @@ describe("handleDesign", () => {
 
     await handleAdd(["add", "my-task", "Some", "description"], tex);
     notifications.length = 0;
-    filesToClean.push("./todos/my-task.md");
+    filesToClean.push("./todos/1-my-task.md");
 
-    await handleDesign(["design", "my-task"], tex, pi, []);
+    await handleDesign(["design", "1-my-task"], tex, pi, []);
 
     expect(notifications).toEqual([
       { msg: "Brainstorming skill not found. Cannot generate design.", level: "error" },
@@ -89,21 +89,21 @@ describe("handleDesign", () => {
 
     await handleAdd(["add", "my-task", "Fix", "the", "bug"], tex);
     notifications.length = 0;
-    filesToClean.push("./todos/my-task.md");
+    filesToClean.push("./todos/1-my-task.md");
 
-    await handleDesign(["design", "my-task"], tex, pi, fakeSkills);
+    await handleDesign(["design", "1-my-task"], tex, pi, fakeSkills);
 
     // No error notifications
     expect(notifications).toEqual([]);
 
     // Design file was created
-    expect(existsSync("./todos/my-task.md")).toBe(true);
+    expect(existsSync("./todos/1-my-task.md")).toBe(true);
 
     // Store was updated with design path
     const data = readStore(cwd, store);
-    const raw = Buffer.from(data!.entries["my-task"], "base64").toString("utf-8");
+    const raw = Buffer.from(data!.entries["1-my-task"], "base64").toString("utf-8");
     const todo = JSON.parse(raw);
-    expect(todo.design).toBe("./todos/my-task.md");
+    expect(todo.design).toBe("./todos/1-my-task.md");
 
     // Skill was injected via sendMessage
     expect(messages.sent.length).toBe(1);
@@ -112,9 +112,9 @@ describe("handleDesign", () => {
 
     // User message was sent via sendUserMessage
     expect(messages.userMessages.length).toBe(1);
-    expect(messages.userMessages[0]).toContain("my-task");
+    expect(messages.userMessages[0]).toContain("1-my-task");
     expect(messages.userMessages[0]).toContain("Fix the bug");
-    expect(messages.userMessages[0]).toContain("todos/my-task.md");
+    expect(messages.userMessages[0]).toContain("todos/1-my-task.md");
   });
 
   it("asks to overwrite existing design and aborts on decline", async () => {
@@ -124,10 +124,10 @@ describe("handleDesign", () => {
     const { pi, messages } = makeMockPi();
 
     await handleAdd(["add", "my-task", "Fix", "bug"], addTex);
-    filesToClean.push("./todos/my-task.md");
+    filesToClean.push("./todos/1-my-task.md");
 
     // First design succeeds
-    await handleDesign(["design", "my-task"], addTex, pi, fakeSkills);
+    await handleDesign(["design", "1-my-task"], addTex, pi, fakeSkills);
     messages.sent.length = 0;
     messages.userMessages.length = 0;
 
@@ -136,7 +136,7 @@ describe("handleDesign", () => {
       confirm: async () => false,
     });
 
-    await handleDesign(["design", "my-task"], declineTex, pi, fakeSkills);
+    await handleDesign(["design", "1-my-task"], declineTex, pi, fakeSkills);
 
     // Should have returned early — no new messages sent
     expect(messages.sent).toEqual([]);
@@ -151,10 +151,10 @@ describe("handleDesign", () => {
     const { pi, messages } = makeMockPi();
 
     await handleAdd(["add", "my-task", "Fix", "bug"], addTex);
-    filesToClean.push("./todos/my-task.md");
+    filesToClean.push("./todos/1-my-task.md");
 
     // First design
-    await handleDesign(["design", "my-task"], addTex, pi, fakeSkills);
+    await handleDesign(["design", "1-my-task"], addTex, pi, fakeSkills);
     messages.sent.length = 0;
     messages.userMessages.length = 0;
 
@@ -163,7 +163,7 @@ describe("handleDesign", () => {
       confirm: async () => true,
     });
 
-    await handleDesign(["design", "my-task"], confirmTex, pi, fakeSkills);
+    await handleDesign(["design", "1-my-task"], confirmTex, pi, fakeSkills);
 
     expect(notifications).toEqual([]);
     expect(messages.sent.length).toBe(1);

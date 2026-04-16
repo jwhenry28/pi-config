@@ -1,0 +1,8 @@
+name: codex
+configs:
+  - name: smart
+    value: gpt-5.4
+  - name: general
+    value: gpt-5.3-codex
+  - name: fast
+    value: gpt-5.1-codex-mini

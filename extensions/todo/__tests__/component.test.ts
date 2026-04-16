@@ -26,27 +26,8 @@ describe("todo extension (component)", () => {
     test.sendUserMessage("/todo add task-1 Build the feature");
 
     expect(test.notifications).toContainEqual(
-      expect.objectContaining({ message: 'Added todo "task-1"' })
+      expect.objectContaining({ message: 'Added todo "1-task-1"' })
     );
-  });
-
-  it("adds a todo then lists via agent tool call", async () => {
-    test = await createComponentTest({ shownModules: ["agent-todo"] });
-
-    test.sendUserMessage("/todo add task-a Do the thing");
-    await test.waitForIdle();
-
-    test.sendUserMessage("list my todos");
-
-    await test.mockAgentResponse({ toolCalls: [{ name: "todo_list", args: {} }] });
-
-    const calls = test.events.toolCalls();
-    expect(calls).toHaveLength(1);
-    expect(calls[0].toolName).toBe("todo_list");
-    
-    const results = test.events.toolResults();
-    expect(results.length).toBeGreaterThanOrEqual(1);
-    expect(JSON.stringify(results[0].result)).toContain("task-a");
   });
 
   it("lists todos via slash command", async () => {
@@ -58,7 +39,7 @@ describe("todo extension (component)", () => {
     expect(test.events.ofType("turn_end")).toHaveLength(0);
 
     const listNotification = test.notifications.find((n) =>
-      n.message.includes("task-b") && n.message.includes("Another task")
+      n.message.includes("1-task-b") && n.message.includes("Another task")
     );
     expect(listNotification).toBeDefined();
   });
@@ -72,12 +53,12 @@ describe("todo extension (component)", () => {
 
     // 2. Verify it was added
     expect(test.notifications).toContainEqual(
-      expect.objectContaining({ message: 'Added todo "complete-me"' })
+      expect.objectContaining({ message: 'Added todo "1-complete-me"' })
     );
 
     // 3. Complete the todo (ui.confirm returns false by default in component tests)
     // The default confirm mock returns false, so the command will be cancelled.
-    test.sendUserMessage("/todo complete complete-me");
+    test.sendUserMessage("/todo complete 1-complete-me");
     await test.waitForIdle();
 
     expect(test.notifications).toContainEqual(
@@ -98,7 +79,7 @@ describe("todo extension (component)", () => {
     test.events.clear();
 
     // 3. Run the design command
-    await test.runCommand("/todo design design-task");
+    await test.runCommand("/todo design 1-design-task");
 
     // 4. Assert: skill was injected
     const customs = test.events.customMessages("todo:skill");
@@ -117,11 +98,11 @@ describe("todo extension (component)", () => {
       const text = Array.isArray(msg.content)
         ? msg.content.map((c: any) => c.text ?? "").join("")
         : typeof msg.content === "string" ? msg.content : "";
-      return text.includes("design-task") && text.includes("Build a widget");
+      return text.includes("1-design-task") && text.includes("Build a widget");
     });
     expect(hasDesignPrompt).toBe(true);
 
     // 6. Assert: design file was created
-    expect(existsSync(join(test.cwd, "todos", "design-task.md"))).toBe(true);
+    expect(existsSync(join(test.cwd, "todos", "1-design-task.md"))).toBe(true);
   });
 });

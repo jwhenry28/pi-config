@@ -27,8 +27,19 @@ describe("formatTodoList", () => {
     await handleAdd(["add", "task-b", "Second", "task"], tex);
 
     const result = formatTodoList(cwd, store);
-    expect(result).toContain("• task-a — First task");
-    expect(result).toContain("• task-b — Second task");
+    expect(result).toContain("• 1-task-a — First task");
+    expect(result).toContain("• 2-task-b — Second task");
+  });
+
+  it("lists auto-numbered names using the final stored name", async () => {
+    const store = makeStoreName("test-todo-");
+    stores.push(store);
+    const { tex } = makeMockTex(cwd, store);
+
+    await handleAdd(["add", "write-tests", "Write", "tests"], tex);
+
+    const result = formatTodoList(cwd, store);
+    expect(result).toContain("• 1-write-tests — Write tests");
   });
 });
 
@@ -63,6 +74,6 @@ describe("handleList", () => {
 
     expect(notifications.length).toBe(1);
     expect(notifications[0].level).toBe("info");
-    expect(notifications[0].msg).toContain("• my-task — Do something");
+    expect(notifications[0].msg).toContain("• 1-my-task — Do something");
   });
 });

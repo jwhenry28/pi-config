@@ -24,11 +24,11 @@ describe("handleComplete", () => {
     await handleAdd(["add", "my-task", "Fix", "bug"], tex);
     notifications.length = 0;
 
-    await handleComplete(["complete", "my-task"], tex);
+    await handleComplete(["complete", "1-my-task"], tex);
 
-    expect(notifications).toEqual([{ msg: 'Completed todo "my-task"', level: "info" }]);
+    expect(notifications).toEqual([{ msg: 'Completed todo "1-my-task"', level: "info" }]);
     const data = readStore(cwd, store);
-    expect(data?.entries["my-task"]).toBeUndefined();
+    expect(data?.entries["1-my-task"]).toBeUndefined();
   });
 
   it("cancels when not confirmed", async () => {
@@ -41,11 +41,11 @@ describe("handleComplete", () => {
     await handleAdd(["add", "my-task", "Fix", "bug"], tex);
     notifications.length = 0;
 
-    await handleComplete(["complete", "my-task"], tex);
+    await handleComplete(["complete", "1-my-task"], tex);
 
     expect(notifications).toEqual([{ msg: "Cancelled", level: "info" }]);
     const data = readStore(cwd, store);
-    expect(data?.entries["my-task"]).toBeDefined();
+    expect(data?.entries["1-my-task"]).toBeDefined();
   });
 
   it("rejects missing name", async () => {
@@ -116,8 +116,8 @@ describe("getTodoCompletions", () => {
     expect(result).not.toBeNull();
     expect(result).toHaveLength(2);
     const values = result!.map((r: AutocompleteItem) => r.label);
-    expect(values).toContain("alpha");
-    expect(values).toContain("beta");
+    expect(values).toContain("1-alpha");
+    expect(values).toContain("2-beta");
   });
 
   it("filters todos by prefix", async () => {
@@ -127,11 +127,11 @@ describe("getTodoCompletions", () => {
     await handleAdd(["add", "alpha", "First", "task"], tex);
     await handleAdd(["add", "beta", "Second", "task"], tex);
 
-    const result = getTodoCompletions(cwd, store, "complete", "al");
+    const result = getTodoCompletions(cwd, store, "complete", "1-al");
     expect(result).not.toBeNull();
     expect(result).toHaveLength(1);
-    expect(result![0].label).toBe("alpha");
-    expect(result![0].value).toBe("complete alpha");
+    expect(result![0].label).toBe("1-alpha");
+    expect(result![0].value).toBe("complete 1-alpha");
     expect(result![0].description).toBe("First task");
   });
 
@@ -151,11 +151,11 @@ describe("getTodoCompletions", () => {
     const { tex } = makeMockTex(cwd, store);
     await handleAdd(["add", "my-task", "Fix", "the", "bug"], tex);
 
-    const result = getTodoCompletions(cwd, store, "complete", "my");
+    const result = getTodoCompletions(cwd, store, "complete", "1-my");
     expect(result).not.toBeNull();
     expect(result![0]).toEqual({
-      value: "complete my-task",
-      label: "my-task",
+      value: "complete 1-my-task",
+      label: "1-my-task",
       description: "Fix the bug",
     });
   });
@@ -166,11 +166,11 @@ describe("getTodoCompletions", () => {
     const { tex } = makeMockTex(cwd, store);
     await handleAdd(["add", "my-task", "Fix", "the", "bug"], tex);
 
-    const result = getTodoCompletions(cwd, store, "design", "my");
+    const result = getTodoCompletions(cwd, store, "design", "1-my");
     expect(result).not.toBeNull();
     expect(result![0]).toEqual({
-      value: "design my-task",
-      label: "my-task",
+      value: "design 1-my-task",
+      label: "1-my-task",
       description: "Fix the bug",
     });
   });

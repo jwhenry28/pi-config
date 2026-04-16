@@ -1,0 +1,8 @@
+name: anthropic
+configs:
+  - name: smart
+    value: claude-opus-4-6
+  - name: general
+    value: claude-sonnet-4-5
+  - name: fast
+    value: claude-haiku-4-5

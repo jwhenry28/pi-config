@@ -32,12 +32,26 @@ If plan tasks specify memory writes/reads, execute them exactly and keep key nam
 ## The Process
 
 ### Step 1: Create a new branch
-1. If you are on the `main` branch, create a new branch. IF YOU ARE NOT ON `main`, SKIP THIS STEP.
-2. NEVER start the plan off the `main` branch.
+1. First check whether the current working directory is inside a Git repository.
+2. If you are **not** inside a Git repository, skip this step.
+3. If you are inside a Git repository and you are on the `main` branch, create a new branch.
+4. If you are inside a Git repository and you are **not** on `main`, skip this step.
+5. Never commit directly to `main`.
 
 #### Examples:
-starting from `main` branch:
+outside a Git repository:
+```bash
+$ git rev-parse --is-inside-work-tree
+fatal: not a git repository (or any of the parent directories): .git
+
+# not in a git repo, so skip branch creation
 ```
+
+starting from `main` branch:
+```bash
+$ git rev-parse --is-inside-work-tree
+true
+
 $ git rev-parse --abbrev-ref HEAD
 main
 
@@ -46,11 +60,14 @@ $ git checkout -b claude/hitboxing
 ```
 
 starting from non-main branch:
-```
+```bash
+$ git rev-parse --is-inside-work-tree
+true
+
 $ git rev-parse --abbrev-ref HEAD
 jwh/hitboxing
 
-# NOT on main branch, so nothing else to do
+# not on main branch, so nothing else to do
 ```
 
 ### Step 2: Load and Review Plan
@@ -132,7 +149,7 @@ After all tasks complete and verified:
 - Commit changes (human reviewer handles all commits)
 - Push to remote
 - Run git add/commit/push commands
-- Start work on the main branch (always create a feature branch first)
+- Commit directly to `main`
 
 ## Clean Code Style
 

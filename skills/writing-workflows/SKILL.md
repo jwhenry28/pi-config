@@ -8,6 +8,8 @@ module: general
 
 Workflows are YAML files in `.pi/workflows/` that define a sequence of steps executed by the `/workflow` extension. Each step runs in a fresh pi session with its own model, prompt, and skills.
 
+Whenever you add, remove, or rename a workflow file in `.pi/workflows/`, also update the "Available Workflows" tree in `.pi/SYSTEM.md` so it matches the current `tree .pi/workflows` output.
+
 ## Usage
 
 ```
