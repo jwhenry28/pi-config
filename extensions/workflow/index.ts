@@ -12,6 +12,7 @@ import {
 	runCurrentStep,
 	advanceToNextStep,
 	restoreOriginalModel,
+	restoreOriginalThinkingLevel,
 	restoreOriginalModules,
 	filterToCurrentStep,
 	buildModuleSkillsBlock,
@@ -36,6 +37,7 @@ export default function workflowExtension(pi: ExtensionAPI) {
 		advancing: false,
 		savedCommandCtx: null,
 		originalModelId: null,
+		originalThinkingLevel: null,
 		originalModules: null,
 		pendingConditionIndex: null,
 		errorPaused: false,
@@ -191,6 +193,7 @@ async function handleWorkflowAbort(
 	state.errorPaused = false;
 	updateStatus(state, ctx);
 	await restoreOriginalModules(pi, state);
+	restoreOriginalThinkingLevel(pi, state);
 	await restoreOriginalModel(pi, state, ctx);
 	ctx.ui.notify(`Workflow "${workflowName}" ${reason}`, level);
 }
@@ -224,6 +227,7 @@ async function handleWorkflowStart(
 	}
 
 	state.originalModelId = ctx.model?.id ?? null;
+	state.originalThinkingLevel = pi.getThinkingLevel();
 	state.originalModules = currentShownModules;
 	state.active = { id: randomUUID(), config, userPrompt, currentStepIndex: 0, executionCounts: {} };
 	ctx.ui.notify(`Starting workflow "${config.name}" (${config.steps.length} steps)`, "info");

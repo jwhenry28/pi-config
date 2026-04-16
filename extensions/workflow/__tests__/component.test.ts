@@ -393,6 +393,34 @@ This is FAKE_SKILL_CONTENT_FOR_TESTING.
       expect(capturedModels.length).toBe(1);
       expect(capturedModels[0].id).toBe("mock-model");
     }, 15000);
+
+    it("applies step thinking and defaults omitted thinking to off", async () => {
+      test = await createComponentTest();
+      registerMockModel(test);
+
+      writeWorkflow(test.cwd, "thinking-test", {
+        name: "thinking-test",
+        steps: [
+          { name: "Step1", model: "mock-model", thinking: "high", prompt: "Think hard" },
+          { name: "Step2", model: "mock-model", prompt: "No thinking" },
+        ],
+      });
+
+      const capturedThinkingLevels: string[] = [];
+      const originalStreamFn = test.session.agent.streamFn;
+      test.session.agent.streamFn = (model: any, context: any, options?: any) => {
+        capturedThinkingLevels.push(test!.session.agent.state.thinkingLevel);
+        return originalStreamFn(model, context, options);
+      };
+
+      test.sendUserMessage("/workflow thinking-test Test thinking");
+      await test.mockAgentResponse({ text: "Done 1" });
+      await new Promise(r => setTimeout(r, 200));
+      await test.mockAgentResponse({ text: "Done 2" });
+      await test.waitForIdle();
+
+      expect(capturedThinkingLevels).toEqual(["high", "off"]);
+    }, 15000);
   });
 
   describe("model aliases", () => {

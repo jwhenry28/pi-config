@@ -134,7 +134,7 @@ export async function evaluateCondition(
   const { session } = await createAgentSession({
     cwd,
     model,
-    thinkingLevel: "off",
+    thinkingLevel: condition.thinking ?? "off",
     tools: createCodingTools(cwd),
     customTools: [evaluateTool],
     resourceLoader: loader,

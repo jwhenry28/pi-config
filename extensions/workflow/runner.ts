@@ -72,6 +72,15 @@ export async function restoreOriginalModel(
   state.originalModelId = null;
 }
 
+export function restoreOriginalThinkingLevel(
+  pi: ExtensionAPI,
+  state: WorkflowState,
+): void {
+  if (!state.originalThinkingLevel) return;
+  pi.setThinkingLevel(state.originalThinkingLevel);
+  state.originalThinkingLevel = null;
+}
+
 export function computeEffectiveModules(
   config: WorkflowConfig,
   step: PromptStep,
@@ -271,6 +280,13 @@ async function applyStepModel(
   return true;
 }
 
+function applyStepThinkingLevel(
+  pi: ExtensionAPI,
+  step: PromptStep,
+): void {
+  pi.setThinkingLevel(step.thinking ?? "off");
+}
+
 export async function handlePostStep(
   pi: ExtensionAPI,
   state: WorkflowState,
@@ -295,6 +311,7 @@ export async function handlePostStep(
     state.active = null;
     updateStatus(state, ctx);
     await restoreOriginalModules(pi, state);
+    restoreOriginalThinkingLevel(pi, state);
     await restoreOriginalModel(pi, state, ctx);
     ctx.ui.notify(
       `Workflow "${name}" aborted: condition evaluation failed`,
@@ -421,6 +438,7 @@ export async function runCurrentStep(
     return;
   }
 
+  applyStepThinkingLevel(pi, promptStep);
   injectSkills(pi, promptStep, state);
   const resolvedPrompt = resolvePrompt(promptStep.prompt, state.cwd);
   const message = buildMessage(
@@ -464,6 +482,7 @@ async function completeWorkflow(
   updateStatus(state, ctx);
   state.advancing = false;
   await restoreOriginalModules(pi, state);
+  restoreOriginalThinkingLevel(pi, state);
   await restoreOriginalModel(pi, state, ctx);
 }
 
