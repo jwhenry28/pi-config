@@ -12,7 +12,11 @@ import { getPluginSkillPaths } from "../skill-loader.js";
  */
 export function loadAllSkills(cwd: string): ResolvedSkill[] {
   const pluginSkillDirs = getPluginSkillPaths(cwd);
-  const result = loadSkills({ cwd, skillPaths: pluginSkillDirs });
+  const result = loadSkills({
+    cwd,
+    skillPaths: pluginSkillDirs,
+    includeDefaults: true,
+  });
 
   return result.skills.map(skill => {
     const frontmatter = parseFrontmatter(skill.filePath);

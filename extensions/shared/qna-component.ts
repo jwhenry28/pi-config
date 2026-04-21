@@ -400,16 +400,32 @@ export class QnAComponent implements Component {
       const selected = i === this.selectedOption;
       const marker = selected ? this.cyan("❯ ") : "  ";
       const label = selected ? this.bold(options[i]) : options[i];
-      const optLine = truncateToWidth(marker + label, contentWidth);
-      lines.push(padToWidth(boxLine(optLine)));
+      this.renderWrappedOption(lines, marker, label, contentWidth, boxLine, padToWidth);
     }
-    // "Something else…" option
+
     const seSelected = this.selectedOption === options.length;
     const seMarker = seSelected ? this.cyan("❯ ") : "  ";
     const seLabel = seSelected
       ? this.bold(this.dim(QnAComponent.SOMETHING_ELSE))
       : this.dim(QnAComponent.SOMETHING_ELSE);
-    lines.push(padToWidth(boxLine(truncateToWidth(seMarker + seLabel, contentWidth))));
+    this.renderWrappedOption(lines, seMarker, seLabel, contentWidth, boxLine, padToWidth);
+  }
+
+  private renderWrappedOption(
+    lines: string[],
+    marker: string,
+    label: string,
+    contentWidth: number,
+    boxLine: (content: string, leftPad?: number) => string,
+    padToWidth: (line: string) => string,
+  ): void {
+    const markerWidth = visibleWidth(marker);
+    const wrappedLabelLines = wrapTextWithAnsi(label, Math.max(1, contentWidth - markerWidth));
+
+    for (let i = 0; i < wrappedLabelLines.length; i++) {
+      const prefix = i === 0 ? marker : " ".repeat(markerWidth);
+      lines.push(padToWidth(boxLine(prefix + wrappedLabelLines[i])));
+    }
   }
 
   private renderFreeTextEditor(
