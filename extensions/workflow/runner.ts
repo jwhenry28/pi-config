@@ -113,7 +113,7 @@ export function updateStatus(
     "workflow",
     ctx.ui.theme.fg(
       "accent",
-      `⚡ ${state.active.config.name} [${idx}/${total}] ${step.name}`,
+      `⚡ ${state.active.config.name} [${idx}/${total}] ${step.name} ${state.active.id}`,
     ),
   );
 }
