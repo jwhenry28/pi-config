@@ -1,4 +1,5 @@
 import { execSync, execFileSync } from "node:child_process";
+import { getCwd } from "../../shared/cwd.js";
 import { registerConditionCommand } from "./registry.js";
 import { writeKey } from "../../memory/store.js";
 import { SUCCESS_STATES } from "./deploy-sam-application.js";
@@ -57,8 +58,9 @@ registerConditionCommand("check-if-sam-unhealthy", async (ctx, args) => {
 		throw new Error("check-if-sam-unhealthy requires 'stackNameCommand' arg");
 	}
 
+	const cwd = getCwd(ctx);
 	const { result, explanation } = checkIfSamUnhealthy(
-		ctx.cwd,
+		cwd,
 		stackNameCommand,
 	);
 
@@ -66,6 +68,6 @@ registerConditionCommand("check-if-sam-unhealthy", async (ctx, args) => {
 	const marker = result === "true" ? "✗" : "✓";
 	notify(`[check-if-sam-unhealthy] ${explanation} ${marker}`, result === "true" ? "warning" : "info");
 
-	writeKey(ctx.cwd, ctx.workflowId, "workflow-condition-result",
+	writeKey(cwd, ctx.workflowId, "workflow-condition-result",
 		JSON.stringify({ result, explanation }));
 });

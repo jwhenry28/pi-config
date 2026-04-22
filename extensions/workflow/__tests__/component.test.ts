@@ -1,3 +1,4 @@
+import { deleteEntry, readKey, writeKey } from "../../memory/store.js";
 import { describe, it, expect, afterEach } from "vitest";
 import { createComponentTest, type ComponentTestSession } from "../../testutils/component/index.js";
 import { writeWorkflow, writeTodo } from "../../testutils/component/index.js";
@@ -12,6 +13,92 @@ describe("workflow extension (component)", () => {
     setConditionStreamFnOverride(undefined);
     test?.dispose();
     test = undefined;
+  });
+
+  describe("workflow prompt memory", () => {
+    it("stores the initial workflow prompt under workflow-prompt on start", async () => {
+      test = await createComponentTest({ shownModules: ["memory"] });
+      registerMockModel(test);
+
+      writeWorkflow(test.cwd, "prompt-start", {
+        name: "prompt-start",
+        steps: [{ name: "Step1", model: "mock-model", prompt: "Do work", approval: true }],
+      });
+
+      test.sendUserMessage("/workflow prompt-start Original canonical prompt");
+      await test.mockAgentResponse({ text: "Done" });
+      await new Promise(r => setTimeout(r, 300));
+
+      const workflowId = parseWorkflowId(test.events);
+      expect(readKey(test.cwd, workflowId, "workflow-prompt")).toBe("Original canonical prompt");
+    }, 15000);
+
+    it("fails clearly when workflow-prompt is missing before a later step", async () => {
+      test = await createComponentTest({ shownModules: ["memory"] });
+      registerMockModel(test);
+
+      writeWorkflow(test.cwd, "prompt-missing", {
+        name: "prompt-missing",
+        steps: [
+          { name: "Step1", model: "mock-model", prompt: "First", approval: true },
+          { name: "Step2", model: "mock-model", prompt: "Second" },
+        ],
+      });
+
+      test.sendUserMessage("/workflow prompt-missing Original prompt text");
+      await test.mockAgentResponse({ text: "Finished step 1" });
+      await test.waitForIdle();
+
+      const workflowId = parseWorkflowId(test.events);
+      deleteEntry(test.cwd, workflowId, "workflow-prompt");
+
+      test.sendUserMessage("/workflow continue");
+      await new Promise(r => setTimeout(r, 300));
+
+      expect(test.notifications).toContainEqual(
+        expect.objectContaining({
+          message: expect.stringContaining("Missing workflow prompt in memory"),
+        })
+      );
+    }, 15000);
+  });
+
+  describe("prompt memory between steps", () => {
+    it("uses updated workflow-prompt memory value for the next step", async () => {
+      test = await createComponentTest({ shownModules: ["memory"] });
+      registerMockModel(test);
+
+      writeWorkflow(test.cwd, "prompt-revision", {
+        name: "prompt-revision",
+        steps: [
+          { name: "Brainstorm", model: "mock-model", prompt: "Brainstorm work", approval: true },
+          { name: "Implement", model: "mock-model", prompt: "Implement work" },
+        ],
+      });
+
+      const capturedContexts: any[] = [];
+      const originalStreamFn = test.session.agent.streamFn;
+      test.session.agent.streamFn = (model: any, context: any, options?: any) => {
+        capturedContexts.push(JSON.parse(JSON.stringify(context)));
+        return originalStreamFn(model, context, options);
+      };
+
+      test.sendUserMessage("/workflow prompt-revision Build X using the old approach");
+      await test.mockAgentResponse({ text: "We discovered the better approach." });
+      await test.waitForIdle();
+
+      const workflowId = parseWorkflowId(test.events);
+      writeKey(test.cwd, workflowId, "workflow-prompt", "Build X using the revised approach");
+
+      test.sendUserMessage("/workflow continue");
+      await new Promise(r => setTimeout(r, 300));
+      await test.mockAgentResponse({ text: "Implemented the revised approach." });
+      await test.waitForIdle();
+
+      const step2Text = JSON.stringify(capturedContexts[1].messages);
+      expect(step2Text).toContain("Build X using the revised approach");
+      expect(step2Text).not.toContain("Build X using the old approach");
+    }, 15000);
   });
 
   describe("basic multi-step", () => {

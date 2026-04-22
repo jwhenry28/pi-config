@@ -22,6 +22,7 @@ import {
 	autoJump,
 	isMaxExecutionsReached,
 } from "./runner.js";
+import { createMemoryDomain, setWorkflowPrompt } from "./prompt-memory.js";
 import { writeKey } from "../memory/store.js";
 import { recordStepUsage, extractUsageFromMessage, completeDiagnostics } from "./diagnostics.js";
 import "./commands/check-if-sam-unhealthy.js";
@@ -229,7 +230,10 @@ async function handleWorkflowStart(
 	state.originalModelId = ctx.model?.id ?? null;
 	state.originalThinkingLevel = pi.getThinkingLevel();
 	state.originalModules = currentShownModules;
-	state.active = { id: randomUUID(), config, userPrompt, currentStepIndex: 0, executionCounts: {} };
+	const workflowId = randomUUID();
+	state.active = { id: workflowId, config, currentStepIndex: 0, executionCounts: {} };
+	createMemoryDomain(state.cwd, workflowId);
+	setWorkflowPrompt(state.cwd, workflowId, userPrompt);
 	ctx.ui.notify(`Starting workflow "${config.name}" (${config.steps.length} steps)`, "info");
 	await runCurrentStep(pi, state, ctx);
 }
