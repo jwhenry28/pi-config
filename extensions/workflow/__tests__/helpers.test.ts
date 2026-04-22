@@ -1,10 +1,46 @@
-import { describe, it, expect } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, it, expect } from "vitest";
+import { createMemoryDomain, getWorkflowPrompt, setWorkflowPrompt, WORKFLOW_PROMPT_KEY } from "../prompt-memory.js";
 import { registerMockModel, runWorkflow, parseWorkflowId } from "./helpers.js";
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 describe("test helpers", () => {
   it("exports all helper functions", () => {
     expect(typeof registerMockModel).toBe("function");
     expect(typeof runWorkflow).toBe("function");
+  });
+});
+
+describe("workflow prompt memory helpers", () => {
+  it("reads and writes workflow-prompt in workflow memory", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "workflow-prompt-"));
+    tempDirs.push(cwd);
+    const workflowId = "wf-test-1";
+
+    createMemoryDomain(cwd, workflowId);
+    setWorkflowPrompt(cwd, workflowId, "Initial prompt");
+
+    expect(getWorkflowPrompt(cwd, workflowId)).toBe("Initial prompt");
+    expect(WORKFLOW_PROMPT_KEY).toBe("workflow-prompt");
+  });
+
+  it("throws a clear error when workflow-prompt is missing", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "workflow-prompt-"));
+    tempDirs.push(cwd);
+    const workflowId = "wf-test-2";
+
+    createMemoryDomain(cwd, workflowId);
+
+    expect(() => getWorkflowPrompt(cwd, workflowId)).toThrow(/Missing workflow prompt in memory/);
   });
 });
 

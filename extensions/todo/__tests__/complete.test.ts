@@ -26,9 +26,35 @@ describe("handleComplete", () => {
 
     await handleComplete(["complete", "1-my-task"], tex);
 
-    expect(notifications).toEqual([{ msg: 'Completed todo "1-my-task"', level: "info" }]);
+    expect(notifications).toEqual([
+      {
+        msg: 'Completed todo "1-my-task"\n\nNo open todos',
+        level: "info",
+      },
+    ]);
     const data = readStore(cwd, store);
     expect(data?.entries["1-my-task"]).toBeUndefined();
+  });
+
+  it("appends the remaining todo list after a successful completion", async () => {
+    const store = makeStoreName("test-todo-");
+    stores.push(store);
+    const { tex, notifications } = makeMockTex(cwd, store, {
+      confirm: async () => true,
+    });
+
+    await handleAdd(["add", "alpha", "First", "task"], tex);
+    await handleAdd(["add", "beta", "Second", "task"], tex);
+    notifications.length = 0;
+
+    await handleComplete(["complete", "1-alpha"], tex);
+
+    expect(notifications).toEqual([
+      {
+        msg: 'Completed todo "1-alpha"\n\n• 2-beta — Second task',
+        level: "info",
+      },
+    ]);
   });
 
   it("cancels when not confirmed", async () => {

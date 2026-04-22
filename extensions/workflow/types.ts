@@ -73,7 +73,6 @@ export interface WorkflowConfig {
 export interface ActiveWorkflow {
 	id: string;
 	config: WorkflowConfig;
-	userPrompt: string;
 	currentStepIndex: number;
 	executionCounts: Record<string, number>;
 }

@@ -26,7 +26,9 @@ describe("todo extension (component)", () => {
     test.sendUserMessage("/todo add task-1 Build the feature");
 
     expect(test.notifications).toContainEqual(
-      expect.objectContaining({ message: 'Added todo "1-task-1"' })
+      expect.objectContaining({
+        message: 'Added todo "1-task-1"\n\n• 1-task-1 — Build the feature',
+      })
     );
   });
 
@@ -53,7 +55,9 @@ describe("todo extension (component)", () => {
 
     // 2. Verify it was added
     expect(test.notifications).toContainEqual(
-      expect.objectContaining({ message: 'Added todo "1-complete-me"' })
+      expect.objectContaining({
+        message: 'Added todo "1-complete-me"\n\n• 1-complete-me — A task to complete',
+      })
     );
 
     // 3. Complete the todo (ui.confirm returns false by default in component tests)
@@ -98,7 +102,11 @@ describe("todo extension (component)", () => {
       const text = Array.isArray(msg.content)
         ? msg.content.map((c: any) => c.text ?? "").join("")
         : typeof msg.content === "string" ? msg.content : "";
-      return text.includes("1-design-task") && text.includes("Build a widget");
+      return (
+        text.includes("1-design-task")
+        && text.includes("Build a widget")
+        && text.includes("todos/1-design-task.md")
+      );
     });
     expect(hasDesignPrompt).toBe(true);
 

@@ -1,4 +1,5 @@
 import { spawn, execSync, execFileSync } from "node:child_process";
+import { getCwd } from "../../shared/cwd.js";
 import { registerStepCommand } from "./registry.js";
 import type { CommandContext } from "./registry.js";
 
@@ -38,10 +39,11 @@ export async function handleDeploySamApplication(
 	}
 
 	const notify = ctx.ui?.notify ?? (() => {});
+	const cwd = getCwd(ctx);
 
 	// Phase 1: Deploy
 	notify("[deploy] Starting deployment...");
-	const exitCode = await runDeploy(deployCommand, ctx.cwd, notify);
+	const exitCode = await runDeploy(deployCommand, cwd, notify);
 	if (exitCode !== 0) {
 		notify(`[deploy] Command exited with code ${exitCode}`, "warning");
 	} else {
@@ -51,7 +53,7 @@ export async function handleDeploySamApplication(
 	// Phase 2: Get stack name and monitor
 	let stackName: string;
 	try {
-		stackName = getStackName(stackNameCommand, ctx.cwd);
+		stackName = getStackName(stackNameCommand, cwd);
 	} catch (err) {
 		throw new Error(`Failed to get stack name: ${(err as Error).message}`);
 	}

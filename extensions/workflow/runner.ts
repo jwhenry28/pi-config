@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
@@ -25,35 +25,15 @@ import { evaluateCondition, evaluateCommandCondition } from "./evaluator.js";
 import { resolveModelAlias, parseModelRef } from "./models.js";
 import { getStepCommand } from "./commands/registry.js";
 import { readKey, deleteEntry } from "../memory/store.js";
-import { MEMORY_DIR } from "../shared/paths.js";
 import {
   isPluginSkillRef,
   resolvePluginSkillPath,
   parseSkillName,
 } from "./plugin-skills.js";
 import { createDiagnostics, completeDiagnostics, recordStepUsage, type TokenUsage } from "./diagnostics.js";
+import { createMemoryDomain, getWorkflowPrompt } from "./prompt-memory.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-function createMemoryDomain(cwd: string, domain: string): void {
-  const dir = join(cwd, MEMORY_DIR);
-  const filePath = join(dir, `${domain}.json`);
-  if (existsSync(filePath)) return;
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  const ts = new Date().toISOString();
-  writeFileSync(
-    filePath,
-    JSON.stringify(
-      {
-        metadata: { created: ts, last_updated: ts, last_visited: ts },
-        entries: {},
-      },
-      null,
-      2,
-    ),
-    "utf-8",
-  );
-}
 const messageTemplate = readFileSync(
   join(__dirname, "prompts", "step-message.md"),
   "utf-8",
@@ -234,12 +214,12 @@ function buildMessage(
   resolvedPrompt: string,
   workflowId: string,
   workflowName: string,
-  userPrompt: string,
+  workflowPrompt: string,
 ): string {
   return messageTemplate
     .replaceAll("%WORKFLOW_ID%", workflowId)
     .replaceAll("%WORKFLOW_NAME%", workflowName)
-    .replaceAll("%WORKFLOW_PROMPT%", userPrompt)
+    .replaceAll("%WORKFLOW_PROMPT%", workflowPrompt)
     .replaceAll("%STEP_NAME%", step.name)
     .replaceAll("%STEP_PROMPT%", resolvedPrompt);
 }
@@ -392,7 +372,6 @@ export async function runCurrentStep(
   updateStatus(state, ctx);
 
   if (state.active.currentStepIndex === 0) {
-    createMemoryDomain(state.cwd, state.active.id);
     createDiagnostics(state.cwd, state.active.id, state.active.config.name);
   }
   if (isCommandStep(step)) {
@@ -440,13 +419,24 @@ export async function runCurrentStep(
 
   applyStepThinkingLevel(pi, promptStep);
   injectSkills(pi, promptStep, state);
+
+  let workflowPrompt: string;
+  try {
+    workflowPrompt = getWorkflowPrompt(state.cwd, state.active.id);
+  } catch (error) {
+    ctx.ui.notify(`[Workflow] ${(error as Error).message}`, "error");
+    state.active = null;
+    updateStatus(state, ctx);
+    return;
+  }
+
   const resolvedPrompt = resolvePrompt(promptStep.prompt, state.cwd);
   const message = buildMessage(
     step,
     resolvedPrompt,
     state.active.id,
     state.active.config.name,
-    state.active.userPrompt,
+    workflowPrompt,
   );
   pi.sendUserMessage(message);
 }
