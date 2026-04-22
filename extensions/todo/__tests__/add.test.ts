@@ -20,7 +20,12 @@ describe("handleAdd", () => {
 
     await handleAdd(["add", "my-task", "Fix", "the", "bug"], tex);
 
-    expect(notifications).toEqual([{ msg: 'Added todo "1-my-task"', level: "info" }]);
+    expect(notifications).toEqual([
+      {
+        msg: 'Added todo "1-my-task"\n\n• 1-my-task — Fix the bug',
+        level: "info",
+      },
+    ]);
 
     const data = readStore(cwd, store);
     expect(data).not.toBeNull();
@@ -36,7 +41,12 @@ describe("handleAdd", () => {
 
     await handleAdd(["add", "do-stuff", "Do", "the", "thing"], tex);
 
-    expect(notifications).toEqual([{ msg: 'Added todo "1-do-stuff"', level: "info" }]);
+    expect(notifications).toEqual([
+      {
+        msg: 'Added todo "1-do-stuff"\n\n• 1-do-stuff — Do the thing',
+        level: "info",
+      },
+    ]);
 
     const data = readStore(cwd, store);
     expect(data).not.toBeNull();
@@ -84,7 +94,12 @@ describe("handleAdd", () => {
 
     await handleAdd(["add", "99-another-thing", "Keep", "manual", "number"], tex);
 
-    expect(notifications).toEqual([{ msg: 'Added todo "99-another-thing"', level: "info" }]);
+    expect(notifications).toEqual([
+      {
+        msg: 'Added todo "99-another-thing"\n\n• 99-another-thing — Keep manual number',
+        level: "info",
+      },
+    ]);
     const data = readStore(cwd, store);
     expect(data?.entries["99-another-thing"]).toBeDefined();
   });
@@ -96,7 +111,12 @@ describe("handleAdd", () => {
 
     await handleAdd(["add", "0007-task", "Normalize", "the", "prefix"], tex);
 
-    expect(notifications).toEqual([{ msg: 'Added todo "7-task"', level: "info" }]);
+    expect(notifications).toEqual([
+      {
+        msg: 'Added todo "7-task"\n\n• 7-task — Normalize the prefix',
+        level: "info",
+      },
+    ]);
     const data = readStore(cwd, store);
     expect(data?.entries["7-task"]).toBeDefined();
     expect(data?.entries["0007-task"]).toBeUndefined();
@@ -109,7 +129,12 @@ describe("handleAdd", () => {
 
     await handleAdd(["add", "0-task", "Keep", "zero"], tex);
 
-    expect(notifications).toEqual([{ msg: 'Added todo "0-task"', level: "info" }]);
+    expect(notifications).toEqual([
+      {
+        msg: 'Added todo "0-task"\n\n• 0-task — Keep zero',
+        level: "info",
+      },
+    ]);
     const data = readStore(cwd, store);
     expect(data?.entries["0-task"]).toBeDefined();
   });
@@ -151,6 +176,24 @@ describe("handleAdd", () => {
 
     const data = readStore(cwd, store);
     expect(data?.entries["2-do-stuff"]).toBeDefined();
+  });
+
+  it("appends the full current todo list after a successful add", async () => {
+    const store = makeStoreName("test-todo-");
+    stores.push(store);
+    const { tex, notifications } = makeMockTex(cwd, store);
+
+    await handleAdd(["add", "alpha", "First", "task"], tex);
+    notifications.length = 0;
+
+    await handleAdd(["add", "beta", "Second", "task"], tex);
+
+    expect(notifications).toEqual([
+      {
+        msg: ['Added todo "2-beta"', "", "• 1-alpha — First task", "• 2-beta — Second task"].join("\n"),
+        level: "info",
+      },
+    ]);
   });
 
   it("rejects missing name", async () => {

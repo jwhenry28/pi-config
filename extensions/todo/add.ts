@@ -1,5 +1,6 @@
 import { ensureStore, addEntry, getEntry, listKeys } from "../memory/store.js";
 import { NAME_RE, type TodoExecutionContext } from "./constants.js";
+import { formatTodoList } from "./list.js";
 
 interface NumericPrefixParts {
   rawNumber: string;
@@ -93,5 +94,7 @@ export async function handleAdd(
 
   const todo = JSON.stringify({ name, description, design: "" });
   addEntry(tex.cwd, tex.storeName, name, todo);
-  tex.ui.notify(`Added todo "${name}"`, "info");
+
+  const listText = formatTodoList(tex.cwd, tex.storeName) ?? "No open todos";
+  tex.ui.notify(`Added todo "${name}"\n\n${listText}`, "info");
 }
