@@ -1,20 +1,49 @@
 name: Test Workflow
 steps:
+  - name: Check Todo Path Memory
+    model: fast
+    prompt: |
+      Briefly acknowledge this step. Do not create files or change workflow memory.
+    conditions:
+      - command: memory_key_not_exists
+        args:
+          memoryKey: todo-path
+        jump: Save Todo Path Memory
+
+  - name: Save Todo Path Memory
+    model: fast
+    prompt: |
+      Read the workflow id from the "Workflow:" header in this message.
+      Save the string "todo.md" to workflow memory under key "todo-path".
+      Do nothing else.
+
+  - name: Check Todo File
+    model: fast
+    prompt: |
+      Briefly acknowledge this step. Do not modify files.
+    conditions:
+      - command: file_not_exists
+        args:
+          memoryKey: todo-path
+        jump: Create Todo
+
   - name: Create Todo
     model: fast
     prompt: |
-      Create a file called "todo.md" in the current directory with a markdown
-      checklist of 3 simple items (e.g. buy groceries, clean kitchen, do laundry).
-      All items should start unchecked ([ ]).
+      Ensure there is a file called "todo.md" in the current directory.
+      If it does not exist, create it with a markdown checklist of 3 simple items
+      (for example: buy groceries, clean kitchen, do laundry), all starting
+      unchecked ([ ]).
+      If it already exists, leave it unchanged.
 
   - name: Complete Item
     model: fast
-    maxExecutions: 2
+    maxExecutions: 3
     prompt: |
       Read "todo.md" in the current directory. Find the first unchecked item
       ([ ]) and mark it as completed ([x]). Write the file back. Do nothing else.
     conditions:
       - command: check-todos-complete
         args:
-          todoFilepath: todo.md
+          memoryKey: todo-path
         jump: Complete Item

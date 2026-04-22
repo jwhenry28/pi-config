@@ -1,7 +1,7 @@
 import { deleteEntry, readKey, writeKey } from "../../memory/store.js";
 import { describe, it, expect, afterEach } from "vitest";
 import { createComponentTest, type ComponentTestSession } from "../../testutils/component/index.js";
-import { writeWorkflow, writeTodo } from "../../testutils/component/index.js";
+import { writeWorkflow, writeTodo, writeFile } from "../../testutils/component/index.js";
 import { registerMockModel, runWorkflow, installConditionOverride, parseWorkflowId } from "./helpers.js";
 import { setConditionStreamFnOverride } from "../evaluator.js";
 import { computeEffectiveModules } from "../runner.js";
@@ -429,6 +429,153 @@ This is FAKE_SKILL_CONTENT_FOR_TESTING.
       expect(markers[0].details.stepName).toBe("Work");
       expect(markers[1].details.stepName).toBe("Work");
       expect(markers[2].details.stepName).toBe("End");
+    }, 15000);
+  });
+
+  describe("negative existence conditions", () => {
+    it("memory_key_not_exists jumps when the key is absent and advances once the key exists", async () => {
+      test = await createComponentTest();
+      registerMockModel(test);
+
+      writeWorkflow(test.cwd, "memory-key-not-exists-branch", {
+        name: "memory-key-not-exists-branch",
+        steps: [
+          {
+            name: "CheckPlan",
+            model: "mock-model",
+            prompt: "Check whether plan memory exists",
+            conditions: [
+              {
+                command: "memory_key_not_exists",
+                args: { memoryKey: "plan" },
+                jump: "CreatePlan",
+              },
+            ],
+          },
+          { name: "CreatePlan", model: "mock-model", prompt: "Create the plan" },
+          {
+            name: "VerifyPlan",
+            model: "mock-model",
+            prompt: "Verify whether plan memory exists",
+            maxExecutions: 2,
+            conditions: [
+              {
+                command: "memory_key_not_exists",
+                args: { memoryKey: "plan" },
+                jump: "CreatePlan",
+              },
+            ],
+          },
+          { name: "Done", model: "mock-model", prompt: "Finish" },
+        ],
+      });
+
+      test.sendUserMessage("/workflow memory-key-not-exists-branch Build the plan");
+
+      await test.mockAgentResponse({ text: "Checked for plan" });
+      await new Promise(r => setTimeout(r, 200));
+
+      const workflowId = parseWorkflowId(test.events);
+      writeKey(test.cwd, workflowId, "plan", "plans/feature");
+
+      await test.mockAgentResponse({ text: "Created the plan" });
+      await new Promise(r => setTimeout(r, 200));
+
+      await test.mockAgentResponse({ text: "Verified the plan exists" });
+      await new Promise(r => setTimeout(r, 200));
+
+      await test.mockAgentResponse({ text: "Finished" });
+      await test.waitForIdle();
+      await new Promise(r => setTimeout(r, 200));
+
+      const markers = test.events.customMessages("workflow:step-marker");
+      expect(markers.map((m: any) => m.details.stepName)).toEqual([
+        "CheckPlan",
+        "CreatePlan",
+        "VerifyPlan",
+        "Done",
+      ]);
+
+      const condResults = test.events.customMessages("workflow:condition-result");
+      const explanations = condResults.map((m: any) => String(m.details.explanation));
+      expect(explanations).toContain('Memory key "plan" does not exist');
+      expect(explanations).toContain('Memory key "plan" exists');
+    }, 15000);
+
+    it("file_not_exists resolves filepath from memory and advances once the file exists", async () => {
+      test = await createComponentTest();
+      registerMockModel(test);
+
+      writeWorkflow(test.cwd, "file-not-exists-memory-branch", {
+        name: "file-not-exists-memory-branch",
+        steps: [
+          {
+            name: "CheckDesign",
+            model: "mock-model",
+            prompt: "Check whether the design file exists",
+            conditions: [
+              {
+                command: "file_not_exists",
+                args: { memoryKey: "design-path" },
+                jump: "GenerateDesign",
+              },
+            ],
+          },
+          { name: "GenerateDesign", model: "mock-model", prompt: "Generate the design" },
+          {
+            name: "VerifyDesign",
+            model: "mock-model",
+            prompt: "Verify whether the design file exists",
+            maxExecutions: 2,
+            conditions: [
+              {
+                command: "file_not_exists",
+                args: { memoryKey: "design-path" },
+                jump: "GenerateDesign",
+              },
+            ],
+          },
+          { name: "Done", model: "mock-model", prompt: "Finish" },
+        ],
+      });
+
+      test.sendUserMessage("/workflow file-not-exists-memory-branch Build the design");
+
+      await test.mockAgentResponse({ text: "Checked for design" });
+      await new Promise(r => setTimeout(r, 200));
+
+      const workflowId = parseWorkflowId(test.events);
+      writeKey(test.cwd, workflowId, "design-path", "plans/feature/design.md");
+      writeFile(test.cwd, "plans/feature/design.md", "# Design\n");
+
+      await test.mockAgentResponse({ text: "Generated the design" });
+      await new Promise(r => setTimeout(r, 200));
+
+      await test.mockAgentResponse({ text: "Verified the design exists" });
+      await new Promise(r => setTimeout(r, 200));
+
+      await test.mockAgentResponse({ text: "Finished" });
+      await test.waitForIdle();
+      await new Promise(r => setTimeout(r, 200));
+
+      const markers = test.events.customMessages("workflow:step-marker");
+      expect(markers.map((m: any) => m.details.stepName)).toEqual([
+        "CheckDesign",
+        "GenerateDesign",
+        "VerifyDesign",
+        "Done",
+      ]);
+
+      const condResults = test.events.customMessages("workflow:condition-result");
+      const explanations = condResults.map((m: any) => String(m.details.explanation));
+      expect(explanations).toContain('Memory key "design-path" does not exist');
+      expect(explanations).toContain("File exists: plans/feature/design.md");
+
+      expect(test.notifications).toContainEqual(
+        expect.objectContaining({
+          message: expect.stringContaining("complete!"),
+        })
+      );
     }, 15000);
   });
 
