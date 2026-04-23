@@ -12,6 +12,7 @@ import {
   runWorkflow,
   parseWorkflowId,
   installConditionOverride,
+  waitForStepMarkers,
 } from "./helpers.js";
 import { setConditionStreamFnOverride } from "../evaluator.js";
 import { DIAGNOSTICS_DIR, type WorkflowDiagnostics } from "../diagnostics.js";
@@ -101,8 +102,9 @@ describe("workflow diagnostics (component)", () => {
 
       // Start workflow — Step1 has approval: true, so it pauses after agent response
       test.sendUserMessage("/workflow diag-abort Test abort");
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "Step 1 done" });
-      await new Promise((r) => setTimeout(r, 300));
+      await test.waitForIdle();
 
       // Extract workflow ID while workflow is still running (paused at approval)
       const workflowId = parseWorkflowId(test.events);
@@ -110,7 +112,6 @@ describe("workflow diagnostics (component)", () => {
       // Abort the workflow
       await test.runCommand("/workflow abort");
       await test.waitForIdle();
-      await new Promise((r) => setTimeout(r, 100));
 
       // Verify diagnostics file shows aborted
       const diagPath = join(test.cwd, DIAGNOSTICS_DIR, `${workflowId}.json`);
@@ -159,8 +160,9 @@ describe("workflow diagnostics (component)", () => {
       test.sendUserMessage("/workflow diag-loop Fix loop");
 
       // Execution 1: todos incomplete → jumps back
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "Working" });
-      await new Promise((r) => setTimeout(r, 200));
+      await waitForStepMarkers(test, 2);
 
       // Mark complete before execution 2
       writeTodo(test.cwd, "diag-tasks.md", [
@@ -168,13 +170,14 @@ describe("workflow diagnostics (component)", () => {
       ]);
 
       // Execution 2: todos complete → advance to Done
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "Finished" });
-      await new Promise((r) => setTimeout(r, 200));
+      await waitForStepMarkers(test, 3);
 
       // Done step
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "Summary" });
       await test.waitForIdle();
-      await new Promise((r) => setTimeout(r, 200));
 
       const workflowId = parseWorkflowId(test.events);
       const data = readDiag(test.cwd, workflowId);
@@ -225,17 +228,19 @@ describe("workflow diagnostics (component)", () => {
       test.sendUserMessage("/workflow diag-prompt-loop Test prompt conditions");
 
       // Execution 1 → condition true → jump back
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "First pass" });
-      await new Promise((r) => setTimeout(r, 2000));
+      await waitForStepMarkers(test, 2);
 
       // Execution 2 → condition false → advance to Finish
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "Second pass" });
-      await new Promise((r) => setTimeout(r, 2000));
+      await waitForStepMarkers(test, 3);
 
       // Finish step
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "Wrapped up" });
       await test.waitForIdle();
-      await new Promise((r) => setTimeout(r, 200));
 
       const workflowId = parseWorkflowId(test.events);
       const data = readDiag(test.cwd, workflowId);

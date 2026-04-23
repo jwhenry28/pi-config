@@ -2,7 +2,15 @@ import { deleteEntry, readKey, writeKey } from "../../memory/store.js";
 import { describe, it, expect, afterEach } from "vitest";
 import { createComponentTest, type ComponentTestSession } from "../../testutils/component/index.js";
 import { writeWorkflow, writeTodo, writeFile } from "../../testutils/component/index.js";
-import { registerMockModel, runWorkflow, installConditionOverride, parseWorkflowId } from "./helpers.js";
+import {
+  registerMockModel,
+  runWorkflow,
+  installConditionOverride,
+  parseWorkflowId,
+  waitForNotification,
+  waitForStepMarkers,
+  waitForConditionResults,
+} from "./helpers.js";
 import { setConditionStreamFnOverride } from "../evaluator.js";
 import { computeEffectiveModules } from "../runner.js";
 import { resolveModelAlias } from "../models.js";
@@ -26,8 +34,9 @@ describe("workflow extension (component)", () => {
       });
 
       test.sendUserMessage("/workflow prompt-start Original canonical prompt");
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "Done" });
-      await new Promise(r => setTimeout(r, 300));
+      await test.waitForIdle();
 
       const workflowId = parseWorkflowId(test.events);
       expect(readKey(test.cwd, workflowId, "workflow-prompt")).toBe("Original canonical prompt");
@@ -46,6 +55,7 @@ describe("workflow extension (component)", () => {
       });
 
       test.sendUserMessage("/workflow prompt-missing Original prompt text");
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "Finished step 1" });
       await test.waitForIdle();
 
@@ -53,7 +63,7 @@ describe("workflow extension (component)", () => {
       deleteEntry(test.cwd, workflowId, "workflow-prompt");
 
       test.sendUserMessage("/workflow continue");
-      await new Promise(r => setTimeout(r, 300));
+      await waitForNotification(test, (n) => n.message.includes("Missing workflow prompt in memory"));
 
       expect(test.notifications).toContainEqual(
         expect.objectContaining({
@@ -84,6 +94,7 @@ describe("workflow extension (component)", () => {
       };
 
       test.sendUserMessage("/workflow prompt-revision Build X using the old approach");
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "We discovered the better approach." });
       await test.waitForIdle();
 
@@ -91,7 +102,7 @@ describe("workflow extension (component)", () => {
       writeKey(test.cwd, workflowId, "workflow-prompt", "Build X using the revised approach");
 
       test.sendUserMessage("/workflow continue");
-      await new Promise(r => setTimeout(r, 300));
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "Implemented the revised approach." });
       await test.waitForIdle();
 
@@ -235,10 +246,9 @@ This is FAKE_SKILL_CONTENT_FOR_TESTING.
       test.sendUserMessage("/workflow cond-test Fix todos");
 
       // DoWork execution 1: todos still all unchecked → condition true → jump back
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "Working on tasks" });
-      // Condition evaluates: todos incomplete → jumps back to DoWork
-      // Wait for jump + next step to start
-      await new Promise(r => setTimeout(r, 200));
+      await waitForStepMarkers(test, 2);
 
       // Before execution 2 response, mark one done
       writeTodo(test.cwd, "todo.md", [
@@ -247,8 +257,9 @@ This is FAKE_SKILL_CONTENT_FOR_TESTING.
       ]);
 
       // DoWork execution 2: still incomplete → jump back
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "Checked off task A" });
-      await new Promise(r => setTimeout(r, 200));
+      await waitForStepMarkers(test, 3);
 
       // Before execution 3 response, mark all complete
       writeTodo(test.cwd, "todo.md", [
@@ -257,13 +268,14 @@ This is FAKE_SKILL_CONTENT_FOR_TESTING.
       ]);
 
       // DoWork execution 3: all complete → condition false → advance to Done
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "All done" });
-      await new Promise(r => setTimeout(r, 200));
+      await waitForStepMarkers(test, 4);
 
       // Done step
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "Summary complete" });
       await test.waitForIdle();
-      await new Promise(r => setTimeout(r, 200));
 
       // Verify step markers
       const markers = test.events.customMessages("workflow:step-marker");
@@ -323,15 +335,17 @@ This is FAKE_SKILL_CONTENT_FOR_TESTING.
       test.sendUserMessage("/workflow prompt-cond Test prompt conditions");
 
       // Execution 1 → condition true → jump back
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "First pass" });
-      await new Promise(r => setTimeout(r, 2000));
+      await waitForStepMarkers(test, 2);
       // Execution 2 → condition false → advance to Finish
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "Second pass" });
-      await new Promise(r => setTimeout(r, 2000));
+      await waitForStepMarkers(test, 3);
       // Finish step
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "Wrapped up" });
       await test.waitForIdle();
-      await new Promise(r => setTimeout(r, 200));
 
       const markers = test.events.customMessages("workflow:step-marker");
       expect(markers[0].details.stepName).toBe("Check");
@@ -370,12 +384,13 @@ This is FAKE_SKILL_CONTENT_FOR_TESTING.
       });
 
       test.sendUserMessage("/workflow todos-done All done");
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "Work done" });
-      await new Promise(r => setTimeout(r, 200));
+      await waitForStepMarkers(test, 2);
       // Condition is false (all checked) → advance to End
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "Finished" });
       await test.waitForIdle();
-      await new Promise(r => setTimeout(r, 200));
 
       const markers = test.events.customMessages("workflow:step-marker");
       expect(markers).toHaveLength(2);
@@ -410,19 +425,21 @@ This is FAKE_SKILL_CONTENT_FOR_TESTING.
       test.sendUserMessage("/workflow todos-pending Fix stuff");
 
       // Execution 1 → unchecked → jump back
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "Working" });
-      await new Promise(r => setTimeout(r, 200));
+      await waitForStepMarkers(test, 2);
 
       // Mark complete before execution 2's condition evaluates
       writeTodo(test.cwd, "pending.md", [{ text: "Task A", checked: true }]);
 
       // Execution 2 → all checked → advance
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "Done" });
-      await new Promise(r => setTimeout(r, 200));
+      await waitForStepMarkers(test, 3);
 
+      await test.waitForAgentTurn();
       await test.mockAgentResponse({ text: "Finished" });
       await test.waitForIdle();
-      await new Promise(r => setTimeout(r, 200));
 
       const markers = test.events.customMessages("workflow:step-marker");
       expect(markers).toHaveLength(3);
@@ -473,20 +490,19 @@ This is FAKE_SKILL_CONTENT_FOR_TESTING.
       test.sendUserMessage("/workflow memory-key-not-exists-branch Build the plan");
 
       await test.mockAgentResponse({ text: "Checked for plan" });
-      await new Promise(r => setTimeout(r, 200));
+      await waitForStepMarkers(test, 2);
 
       const workflowId = parseWorkflowId(test.events);
       writeKey(test.cwd, workflowId, "plan", "plans/feature");
 
       await test.mockAgentResponse({ text: "Created the plan" });
-      await new Promise(r => setTimeout(r, 200));
+      await waitForStepMarkers(test, 3);
 
       await test.mockAgentResponse({ text: "Verified the plan exists" });
-      await new Promise(r => setTimeout(r, 200));
+      await waitForStepMarkers(test, 4);
 
       await test.mockAgentResponse({ text: "Finished" });
       await test.waitForIdle();
-      await new Promise(r => setTimeout(r, 200));
 
       const markers = test.events.customMessages("workflow:step-marker");
       expect(markers.map((m: any) => m.details.stepName)).toEqual([
@@ -542,21 +558,20 @@ This is FAKE_SKILL_CONTENT_FOR_TESTING.
       test.sendUserMessage("/workflow file-not-exists-memory-branch Build the design");
 
       await test.mockAgentResponse({ text: "Checked for design" });
-      await new Promise(r => setTimeout(r, 200));
+      await waitForStepMarkers(test, 2);
 
       const workflowId = parseWorkflowId(test.events);
       writeKey(test.cwd, workflowId, "design-path", "plans/feature/design.md");
       writeFile(test.cwd, "plans/feature/design.md", "# Design\n");
 
       await test.mockAgentResponse({ text: "Generated the design" });
-      await new Promise(r => setTimeout(r, 200));
+      await waitForStepMarkers(test, 3);
 
       await test.mockAgentResponse({ text: "Verified the design exists" });
-      await new Promise(r => setTimeout(r, 200));
+      await waitForStepMarkers(test, 4);
 
       await test.mockAgentResponse({ text: "Finished" });
       await test.waitForIdle();
-      await new Promise(r => setTimeout(r, 200));
 
       const markers = test.events.customMessages("workflow:step-marker");
       expect(markers.map((m: any) => m.details.stepName)).toEqual([
@@ -649,7 +664,7 @@ This is FAKE_SKILL_CONTENT_FOR_TESTING.
 
       test.sendUserMessage("/workflow thinking-test Test thinking");
       await test.mockAgentResponse({ text: "Done 1" });
-      await new Promise(r => setTimeout(r, 200));
+      await waitForStepMarkers(test, 2);
       await test.mockAgentResponse({ text: "Done 2" });
       await test.waitForIdle();
 
@@ -704,16 +719,15 @@ This is FAKE_SKILL_CONTENT_FOR_TESTING.
 
       // Execution 1 → condition true (unchecked) → jump back
       await test.mockAgentResponse({ text: "Attempt 1" });
-      await new Promise(r => setTimeout(r, 200));
+      await waitForStepMarkers(test, 2);
 
       // Execution 2 → condition true (still unchecked) → maxExecutions reached → advance
       await test.mockAgentResponse({ text: "Attempt 2" });
-      await new Promise(r => setTimeout(r, 200));
+      await waitForStepMarkers(test, 3);
 
       // Final step
       await test.mockAgentResponse({ text: "Finished" });
       await test.waitForIdle();
-      await new Promise(r => setTimeout(r, 200));
 
       const markers = test.events.customMessages("workflow:step-marker");
       const loopMarkers = markers.filter((m: any) => m.details.stepName === "Loop");
@@ -756,7 +770,7 @@ This is FAKE_SKILL_CONTENT_FOR_TESTING.
 
       // Step 1: simulate an API error
       await test.mockAgentResponse({ error: "Overloaded" });
-      await new Promise(r => setTimeout(r, 300));
+      await waitForNotification(test, (n) => n.message.includes("Workflow paused (agent error)"));
 
       // Verify workflow did NOT advance — no Step2 marker
       const markersAfterError = test.events.customMessages("workflow:step-marker");
@@ -772,16 +786,14 @@ This is FAKE_SKILL_CONTENT_FOR_TESTING.
 
       // Retry with /workflow continue
       test.sendUserMessage("/workflow continue");
-      await new Promise(r => setTimeout(r, 300));
 
       // Step 1 retry succeeds
       await test.mockAgentResponse({ text: "Step 1 done" });
-      await new Promise(r => setTimeout(r, 300));
+      await waitForStepMarkers(test, 3);
 
       // Step 2 runs and completes
       await test.mockAgentResponse({ text: "Step 2 done" });
       await test.waitForIdle();
-      await new Promise(r => setTimeout(r, 200));
 
       // Verify both steps completed
       const markers = test.events.customMessages("workflow:step-marker");
@@ -818,7 +830,7 @@ This is FAKE_SKILL_CONTENT_FOR_TESTING.
 
       // Step 1: simulate an API error
       await test.mockAgentResponse({ error: "Overloaded" });
-      await new Promise(r => setTimeout(r, 300));
+      await waitForNotification(test, (n) => n.message.includes("Workflow paused (agent error)"));
 
       // Verify workflow paused
       expect(test.notifications).toContainEqual(

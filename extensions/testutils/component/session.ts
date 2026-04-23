@@ -114,6 +114,11 @@ export interface ComponentTestSession {
    */
   runCommand(text: string): Promise<void>;
   /**
+   * Wait until the next agent/model turn is actively pending.
+   * Useful before calling mockAgentResponse() in orchestration-heavy tests.
+   */
+  waitForAgentTurn(timeoutMs?: number): Promise<void>;
+  /**
    * Provide one scripted LLM response. Returns a promise that resolves once
    * the response is fully consumed (tools executed, agent either needs another
    * response or has gone idle).
@@ -166,9 +171,11 @@ export async function createComponentTest(
   setCwdOverride(tempDir);
   setHomeDirOverride(tempHome);
 
-  // Copy real project workflows, prompts, and skills into the temp dir.
+  // Copy real project workflows and prompts into the temp dir.
+  // For skills, copy only a small allowlist so component harness startup
+  // doesn't pull in large embedded documentation trees from heavyweight skills.
   // initial* fixtures write AFTER this, so they can override or add on top.
-  const piDirsToCopy = ["workflows", "prompts", "skills"] as const;
+  const piDirsToCopy = ["workflows", "prompts"] as const;
   for (const dir of piDirsToCopy) {
     const dotPiSource = join(projectCwd, ".pi", dir);
     const rootSource = join(projectCwd, dir);
@@ -176,6 +183,31 @@ export async function createComponentTest(
     if (source) {
       const dest = join(tempDir, ".pi", dir);
       mkdirSync(dest, { recursive: true });
+      cpSync(source, dest, { recursive: true });
+    }
+  }
+
+  const skillsSource = existsSync(join(projectCwd, ".pi", "skills"))
+    ? join(projectCwd, ".pi", "skills")
+    : (existsSync(join(projectCwd, "skills")) ? join(projectCwd, "skills") : undefined);
+
+  const allowedSkills = new Set([
+    "brainstorming",
+    "writing-plans",
+    "executing-plans",
+    "knowing-clean-code",
+    "knowing-yagni",
+    "knowing-dry",
+  ]);
+
+  if (skillsSource) {
+    const tempSkillsDir = join(tempDir, ".pi", "skills");
+    mkdirSync(tempSkillsDir, { recursive: true });
+
+    for (const skillName of allowedSkills) {
+      const source = join(skillsSource, skillName);
+      if (!existsSync(source)) continue;
+      const dest = join(tempSkillsDir, skillName);
       cpSync(source, dest, { recursive: true });
     }
   }
@@ -318,6 +350,12 @@ export async function createComponentTest(
     }
   }
 
+  async function waitForAgentTurn(timeoutMs: number = 5000): Promise<void> {
+    await controller.waitForPendingTurn(timeoutMs);
+    await drainEventQueue();
+    rethrowHarnessError();
+  }
+
   async function mockAgentResponse(response: ScriptedResponse): Promise<void> {
     await controller.provide(response);
     await drainEventQueue();
@@ -385,6 +423,7 @@ export async function createComponentTest(
     notifications,
     sendUserMessage,
     runCommand,
+    waitForAgentTurn,
     mockAgentResponse,
     invokeTool,
     waitForIdle,

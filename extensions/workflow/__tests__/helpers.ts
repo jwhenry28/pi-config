@@ -3,6 +3,16 @@ import { createDummyModel } from "../../testutils/component/mock-stream.js";
 import { createAssistantMessageEventStream } from "@mariozechner/pi-ai";
 import { setConditionStreamFnOverride } from "../evaluator.js";
 
+async function waitUntil(predicate: () => boolean, timeoutMs: number = 5000, intervalMs: number = 10): Promise<void> {
+  const start = Date.now();
+  while (!predicate()) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`Timed out waiting after ${timeoutMs}ms`);
+    }
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+}
+
 /**
  * Register the mock model in the session's model registry so workflow
  * steps can look it up by ID, and add a dummy API key.
@@ -42,8 +52,6 @@ export async function runWorkflow(
   expectedSteps: number,
 ): Promise<void> {
   await test.runCommand(command);
-  // Allow any in-flight autoAdvance to fire
-  await new Promise(r => setTimeout(r, 50));
 
   // Check how many steps completed, provide responses for the rest
   for (let attempt = 0; attempt < expectedSteps; attempt++) {
@@ -53,12 +61,9 @@ export async function runWorkflow(
 
     // A step started but hasn't gotten a response
     await test.mockAgentResponse({ text: "" });
-    await new Promise(r => setTimeout(r, 50));
   }
 
   await test.waitForIdle();
-  // Final drain for completion notification
-  await new Promise(r => setTimeout(r, 100));
 }
 
 /**
@@ -152,4 +157,28 @@ export function parseWorkflowId(events: { ofType: (type: string) => any[] }): st
     }
   }
   throw new Error("Could not find workflow ID in events");
+}
+
+export async function waitForNotification(
+  test: ComponentTestSession,
+  predicate: (n: { message: string; type?: string }) => boolean,
+  timeoutMs: number = 5000,
+): Promise<void> {
+  await waitUntil(() => test.notifications.some(predicate), timeoutMs);
+}
+
+export async function waitForStepMarkers(
+  test: ComponentTestSession,
+  count: number,
+  timeoutMs: number = 5000,
+): Promise<void> {
+  await waitUntil(() => test.events.customMessages("workflow:step-marker").length >= count, timeoutMs);
+}
+
+export async function waitForConditionResults(
+  test: ComponentTestSession,
+  count: number,
+  timeoutMs: number = 5000,
+): Promise<void> {
+  await waitUntil(() => test.events.customMessages("workflow:condition-result").length >= count, timeoutMs);
 }

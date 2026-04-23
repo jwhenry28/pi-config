@@ -25,12 +25,10 @@ import {
 import { createMemoryDomain, setWorkflowPrompt } from "./prompt-memory.js";
 import { writeKey } from "../memory/store.js";
 import { recordStepUsage, extractUsageFromMessage, completeDiagnostics } from "./diagnostics.js";
-import "./commands/check-if-sam-unhealthy.js";
 import "./commands/check-todos-complete.js";
 import "./commands/memory-key-not-exists.js";
 import "./commands/file-not-exists.js";
 import "./commands/ask-user.js";
-import "./commands/deploy-sam-application.js";
 
 export default function workflowExtension(pi: ExtensionAPI) {
 	const state: WorkflowState = {

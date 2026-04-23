@@ -61,6 +61,8 @@ export class MockStreamController {
   // Resolves when streamFn is called (so provide() knows the agent is waiting)
   private _streamFnReadyResolve: (() => void) | null = null;
   private _streamFnReadyPromise: Promise<void>;
+  private _pendingStreamRequest = false;
+  private _pendingTurnWaiters: Array<() => void> = [];
 
   // Resolves when the queued response is consumed (next streamFn call or idle)
   private _consumedResolve: (() => void) | null = null;
@@ -104,6 +106,10 @@ export class MockStreamController {
     _options?: SimpleStreamOptions
   ) => {
     this._consumePreviousResponse();
+    this._pendingStreamRequest = true;
+    if (this._pendingTurnWaiters.length > 0) {
+      for (const resolve of this._pendingTurnWaiters.splice(0)) resolve();
+    }
 
     const stream = createAssistantMessageEventStream();
 
@@ -128,6 +134,7 @@ export class MockStreamController {
       return stream;
     }
 
+    this._pendingStreamRequest = false;
     this._prepareConsumedSlot();
     queueMicrotask(() => this._emitResponse(stream, response));
     return stream;
@@ -145,10 +152,12 @@ export class MockStreamController {
 
     this._queuedResponses.push(response);
 
-    await Promise.race([
-      this._streamFnReadyPromise,
-      timeout("mockAgentResponse timed out — agent loop never called streamFn"),
-    ]);
+    if (!this._pendingStreamRequest) {
+      await Promise.race([
+        this._streamFnReadyPromise,
+        timeout("mockAgentResponse timed out — agent loop never called streamFn"),
+      ]);
+    }
 
     if (!this._consumedPromise) {
       return;
@@ -169,10 +178,31 @@ export class MockStreamController {
     this._autoRespond = enabled;
   }
 
+  async waitForPendingTurn(timeoutMs: number = 5000): Promise<void> {
+    if (this._pendingStreamRequest) {
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this._pendingTurnWaiters = this._pendingTurnWaiters.filter((r) => r !== onReady);
+        reject(new Error(`Timed out waiting for pending agent turn after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      const onReady = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+
+      this._pendingTurnWaiters.push(onReady);
+    });
+  }
+
   /**
    * Call this when the agent goes idle to unblock any pending provide() call.
    */
   notifyIdle(): void {
+    this._pendingStreamRequest = false;
     this._consumePreviousResponse();
   }
 
