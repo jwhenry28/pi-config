@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { moduleTag } from "../modules/api.ts";
@@ -48,14 +48,12 @@ export default function webExtension(pi: ExtensionAPI) {
     );
     if (alreadyShown) return;
 
-    setTimeout(() => {
-      pi.sendMessage({
-        customType: "web-provider",
-        content: "",
-        display: true,
-        details: { provider: provider.name, hasTavily: provider.name !== "duckduckgo" },
-      });
-    }, 0);
+    pi.sendMessage({
+      customType: "web-provider",
+      content: "",
+      display: true,
+      details: { provider: provider.name, hasTavily: provider.name !== "duckduckgo" },
+    });
   });
 
   pi.registerTool(

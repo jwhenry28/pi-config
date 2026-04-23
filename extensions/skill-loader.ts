@@ -72,6 +72,10 @@ export default function skillLoaderExtension(pi: ExtensionAPI) {
     const pluginPaths = getPluginSkillPaths(cwd);
 
     if (pluginPaths.length === 0) return;
-    return { skillPaths: pluginPaths };
+    return {
+      skillPaths: pluginPaths,
+      promptPaths: [],
+      themePaths: [],
+    };
   });
 }

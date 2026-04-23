@@ -19,7 +19,7 @@
  */
 
 import type { ExtensionAPI, ToolDefinition } from "@mariozechner/pi-coding-agent";
-import type { TSchema } from "@sinclair/typebox";
+import type { TSchema } from "typebox";
 
 /** Event payload emitted when a tool is tagged with a module. */
 export interface ModuleToolTagEvent {

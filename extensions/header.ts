@@ -30,7 +30,16 @@ export default function (pi: ExtensionAPI) {
     return new Text(text, 0, 0);
   });
 
-  function emitModulesHeader() {
+  pi.on("session_start", async (_event, ctx) => {
+    if (!ctx.hasUI) return;
+
+    // Only show on fresh sessions — resumed sessions already have
+    // the startup-modules message persisted from the original start.
+    const hasModulesMessage = ctx.sessionManager.getBranch().some(
+      (e) => e.type === "message" && e.message.role === "custom" && e.message.customType === "startup-modules",
+    );
+    if (hasModulesMessage) return;
+
     let shown: string[] = [];
     let modules: Map<string, ModuleContents> = new Map();
 
@@ -55,19 +64,5 @@ export default function (pi: ExtensionAPI) {
       display: true,
       details: { modules: moduleList },
     });
-  }
-
-  pi.on("session_start", async (_event, ctx) => {
-    if (!ctx.hasUI) return;
-
-    // Only show on fresh sessions — resumed sessions already have
-    // the startup-modules message persisted from the original start.
-    const hasModulesMessage = ctx.sessionManager.getBranch().some(
-      (e) => e.type === "message" && e.message.role === "custom" && e.message.customType === "startup-modules",
-    );
-    if (hasModulesMessage) return;
-
-    // Defer so the message appears after the built-in [Skills]/[Extensions]
-    setTimeout(() => emitModulesHeader(), 0);
   });
 }

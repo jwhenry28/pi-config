@@ -10,7 +10,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { moduleTag } from "./modules/api.js";
 import { QnAComponent, type QnAQuestion } from "./shared/qna-component.js";
 

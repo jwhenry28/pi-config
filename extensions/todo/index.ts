@@ -25,7 +25,11 @@ export default function todoExtension(pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     extensionCwd = getCwd(ctx);
-    const result = loadSkills({ cwd: extensionCwd });
+    const result = loadSkills({
+      cwd: extensionCwd,
+      skillPaths: [],
+      includeDefaults: true,
+    });
     allSkills = result.skills;
   });
 
