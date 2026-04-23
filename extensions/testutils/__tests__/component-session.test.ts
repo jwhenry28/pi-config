@@ -37,4 +37,30 @@ describe("createComponentTest", () => {
     const turns = test.events.ofType("turn_end");
     expect(turns.length).toBeGreaterThanOrEqual(2);
   });
+
+  it("fails fast when an agent turn starts without a queued mock response", async () => {
+    test = await createComponentTest();
+
+    test.sendUserMessage("tell me something");
+
+    await expect(test.waitForIdle()).rejects.toThrow(
+      /Use `mockAgentResponse\(\)` or `invokeTool\(\)`/,
+    );
+  });
+
+  it("invokes a registered tool directly without starting an agent turn", async () => {
+    test = await createComponentTest({ shownModules: ["memory"] });
+
+    const result = await test.invokeTool("memory_create", { store: "tool-test-store" });
+
+    expect(result.toolName).toBe("memory_create");
+    expect(result.isError).toBe(false);
+    expect(JSON.stringify(result.result)).toContain("Created");
+    expect(test.events.toolCalls()).toEqual([
+      { toolName: "memory_create", args: { store: "tool-test-store" } },
+    ]);
+    expect(test.events.toolResults()).toEqual([
+      expect.objectContaining({ toolName: "memory_create", isError: false }),
+    ]);
+  });
 });

@@ -51,18 +51,18 @@ export function createDummyModel(): Model<any> {
  * then waits for the response to be consumed (next streamFn call or idle).
  */
 export class MockStreamController {
-  // When true, streamFn auto-responds with empty text if no provide() is pending.
-  // Used by runCommand() so agent turns triggered by pi.sendUserMessage() complete silently.
+  // Component tests are offline by default. Unscripted agent turns are a
+  // harness error and should fail fast with guidance. The only exception is
+  // runCommand(), which may temporarily auto-respond for slash-command flows.
   private _autoRespond = false;
-
-  // Resolves the response promise inside streamFn so it can emit
-  private _responseResolve: ((response: ScriptedResponse) => void) | null = null;
+  private _queuedResponses: ScriptedResponse[] = [];
+  private _pendingError: Error | null = null;
 
   // Resolves when streamFn is called (so provide() knows the agent is waiting)
   private _streamFnReadyResolve: (() => void) | null = null;
   private _streamFnReadyPromise: Promise<void>;
 
-  // Resolves when the response is consumed (next streamFn call or idle)
+  // Resolves when the queued response is consumed (next streamFn call or idle)
   private _consumedResolve: (() => void) | null = null;
   private _consumedPromise: Promise<void> | null = null;
 
@@ -84,6 +84,16 @@ export class MockStreamController {
     });
   }
 
+  private _consumePreviousResponse(): void {
+    if (!this._consumedResolve) {
+      return;
+    }
+
+    this._consumedResolve();
+    this._consumedResolve = null;
+    this._consumedPromise = null;
+  }
+
   /**
    * The stream function to wire into the agent.
    * Arrow function so `this` is bound correctly.
@@ -93,39 +103,33 @@ export class MockStreamController {
     _context: Context,
     _options?: SimpleStreamOptions
   ) => {
-    // Signal that the previous response was consumed
-    if (this._consumedResolve) {
-      this._consumedResolve();
-      this._consumedResolve = null;
-      this._consumedPromise = null;
-    }
+    this._consumePreviousResponse();
 
-    // Auto-respond mode: immediately return an empty response
+    const stream = createAssistantMessageEventStream();
+
     if (this._autoRespond) {
-      const stream = createAssistantMessageEventStream();
       queueMicrotask(() => this._emitResponse(stream, { text: "" }));
       return stream;
     }
 
-    // Create a response promise that provide() will resolve
-    const responsePromise = new Promise<ScriptedResponse>((resolve) => {
-      this._responseResolve = resolve;
-    });
-
-    // Signal that streamFn has been called and is waiting
     if (this._streamFnReadyResolve) {
       this._streamFnReadyResolve();
       this._streamFnReadyResolve = null;
     }
 
-    // Return a stream that waits for provide() to deliver a response
-    const stream = createAssistantMessageEventStream();
+    const response = this._queuedResponses.shift();
+    this._prepareStreamFnReadySlot();
 
-    queueMicrotask(async () => {
-      const response = await responsePromise;
-      this._emitResponse(stream, response);
-    });
+    if (!response) {
+      this._pendingError = new Error(
+        "Component test started an agent turn without a queued mock response. Use `mockAgentResponse()` or `invokeTool()`.",
+      );
+      queueMicrotask(() => this._emitResponse(stream, { error: this._pendingError!.message }));
+      return stream;
+    }
 
+    this._prepareConsumedSlot();
+    queueMicrotask(() => this._emitResponse(stream, response));
     return stream;
   };
 
@@ -139,25 +143,19 @@ export class MockStreamController {
     const timeout = (msg: string) =>
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error(msg)), 5000));
 
-    // Wait for streamFn to be called
+    this._queuedResponses.push(response);
+
     await Promise.race([
       this._streamFnReadyPromise,
       timeout("mockAgentResponse timed out — agent loop never called streamFn"),
     ]);
 
-    // Set up consumed tracking
-    this._prepareConsumedSlot();
+    if (!this._consumedPromise) {
+      return;
+    }
 
-    // Prepare for the next streamFn call
-    this._prepareStreamFnReadySlot();
-
-    // Deliver the response
-    this._responseResolve!(response);
-    this._responseResolve = null;
-
-    // Wait for consumption
     await Promise.race([
-      this._consumedPromise!,
+      this._consumedPromise,
       timeout("mockAgentResponse timed out — response never consumed"),
     ]);
   }
@@ -175,11 +173,13 @@ export class MockStreamController {
    * Call this when the agent goes idle to unblock any pending provide() call.
    */
   notifyIdle(): void {
-    if (this._consumedResolve) {
-      this._consumedResolve();
-      this._consumedResolve = null;
-      this._consumedPromise = null;
-    }
+    this._consumePreviousResponse();
+  }
+
+  consumePendingError(): Error | null {
+    const error = this._pendingError;
+    this._pendingError = null;
+    return error;
   }
 
   private _emitResponse(stream: ReturnType<typeof createAssistantMessageEventStream>, response: ScriptedResponse): void {

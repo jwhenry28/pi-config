@@ -7,6 +7,7 @@ import {
   type AgentSession,
   type ToolDefinition,
   type Tool,
+  type UIFunctions,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { MockStreamController, createDummyModel, type ScriptedResponse } from "./mock-stream.js";
@@ -83,6 +84,12 @@ export interface Notification {
   type: string;
 }
 
+interface ToolInvocationResult {
+  toolName: string;
+  result: unknown;
+  isError: boolean;
+}
+
 export interface ComponentTestSession {
   /** The working directory for this test session (isolated temp dir). */
   cwd: string;
@@ -112,6 +119,11 @@ export interface ComponentTestSession {
    * response or has gone idle).
    */
   mockAgentResponse(response: ScriptedResponse): Promise<void>;
+  /**
+   * Invoke a registered tool directly without starting an agent turn.
+   * Prefer this for tests that validate tool behavior rather than orchestration.
+   */
+  invokeTool(name: string, args: Record<string, unknown>): Promise<ToolInvocationResult>;
   /**
    * Wait for the agent loop to fully wind down and events to drain.
    * Call after the final mockAgentResponse.
@@ -203,6 +215,7 @@ export async function createComponentTest(
 
   // Override the agent's stream function with our mock
   session.agent.streamFn = controller.streamFn;
+  session._modelRegistry.hasConfiguredAuth = () => true;
 
   // Pre-populate messages if provided
   if (opts.messages) {
@@ -217,6 +230,7 @@ export async function createComponentTest(
 
   // Capture notifications
   const notifications: Notification[] = [];
+  const registeredTools = new Map<string, ToolDefinition>();
 
   // Write module config BEFORE binding extensions, so the modules extension
   // reads the correct shownModules during session_start initialization.
@@ -226,40 +240,45 @@ export async function createComponentTest(
 
   writeKey(tempDir, "pi-config", "pi-modules", JSON.stringify({ shown: shownModules, granular: {} }));
 
-  // Bind extensions so slash commands work, with a UI context that captures notify calls
-  await session.bindExtensions({
-    uiContext: {
-      select: async () => undefined,
-      confirm: async () => false,
-      input: async () => undefined,
-      notify: (message: string, type?: string) => {
-        notifications.push({ message, type: type ?? "info" });
-      },
-      onTerminalInput: () => () => {},
-      setStatus: () => {},
-      setWorkingMessage: () => {},
-      setWidget: () => {},
-      setFooter: () => {},
-      setHeader: () => {},
-      setTitle: () => {},
-      custom: async () => undefined,
-      pasteToEditor: () => {},
-      setEditorText: () => {},
-      theme: new Proxy({} as any, {
-        get: (_target, prop) => {
-          // Return identity functions for all theme methods (fg, bg, bold, etc.)
-          if (typeof prop === "string") {
-            return (...args: any[]) => {
-              // If called like theme.fg("accent", text), return the last string arg
-              const lastString = [...args].reverse().find((a) => typeof a === "string");
-              return lastString ?? "";
-            };
-          }
-          return undefined;
-        },
-      }),
+  const uiContext: UIFunctions = {
+    select: async () => undefined,
+    confirm: async () => false,
+    input: async () => undefined,
+    notify: (message: string, type?: string) => {
+      notifications.push({ message, type: type ?? "info" });
     },
-  });
+    onTerminalInput: () => () => {},
+    setStatus: () => {},
+    setWorkingMessage: () => {},
+    setWidget: () => {},
+    setFooter: () => {},
+    setHeader: () => {},
+    setTitle: () => {},
+    custom: async () => undefined,
+    pasteToEditor: () => {},
+    setEditorText: () => {},
+    theme: new Proxy({} as any, {
+      get: (_target, prop) => {
+        if (typeof prop === "string") {
+          return (...args: any[]) => {
+            const lastString = [...args].reverse().find((a) => typeof a === "string");
+            return lastString ?? "";
+          };
+        }
+        return undefined;
+      },
+    }),
+  };
+
+  // Bind extensions so slash commands work, with a UI context that captures notify calls
+  await session.bindExtensions({ uiContext });
+
+  const registeredToolEntries = session._toolRegistry?.entries();
+  if (registeredToolEntries) {
+    for (const [name, tool] of registeredToolEntries) {
+      registeredTools.set(name, tool as ToolDefinition);
+    }
+  }
 
   // Watch for agent going idle to unblock controller
   session.subscribe((event: any) => {
@@ -268,26 +287,77 @@ export async function createComponentTest(
     }
   });
 
+  function rethrowHarnessError(): void {
+    const error = controller.consumePendingError();
+    if (!error) {
+      return;
+    }
+
+    throw error;
+  }
+
   function sendUserMessage(text: string): void {
-    session.prompt(text);
+    if (text.startsWith("/")) {
+      void runCommand(text);
+      return;
+    }
+
+    void session.prompt(text);
   }
 
   async function runCommand(text: string): Promise<void> {
     controller.setAutoRespond(true);
-    session.prompt(text);
-    await session.agent.waitForIdle();
-    await drainEventQueue();
-    controller.setAutoRespond(false);
+
+    try {
+      session.prompt(text);
+      await session.agent.waitForIdle();
+      await drainEventQueue();
+      rethrowHarnessError();
+    } finally {
+      controller.setAutoRespond(false);
+    }
   }
 
   async function mockAgentResponse(response: ScriptedResponse): Promise<void> {
     await controller.provide(response);
     await drainEventQueue();
+    rethrowHarnessError();
+  }
+
+  async function invokeTool(name: string, args: Record<string, unknown>): Promise<ToolInvocationResult> {
+    const tool = registeredTools.get(name);
+    if (!tool) {
+      throw new Error(`Tool not found in component test session: ${name}`);
+    }
+
+    events.push({ type: "tool_execution_start", toolName: name, args });
+
+    try {
+      // Prefer invokeTool() for component tests that validate tool behavior.
+      // This bypasses model prompting while still exercising the registered extension tool.
+      const result = await tool.execute(
+        "component-test-tool-call",
+        args,
+        new AbortController().signal,
+        () => {},
+        { session, ui: uiContext, hasUI: true } as any,
+      );
+
+      events.push({ type: "tool_execution_end", toolName: name, result, isError: false });
+      await drainEventQueue();
+      rethrowHarnessError();
+      return { toolName: name, result, isError: false };
+    } catch (error) {
+      events.push({ type: "tool_execution_end", toolName: name, result: error, isError: true });
+      await drainEventQueue();
+      throw error;
+    }
   }
 
   async function waitForIdle(): Promise<void> {
     await session.agent.waitForIdle();
     await drainEventQueue();
+    rethrowHarnessError();
   }
 
   async function drainEventQueue(): Promise<void> {
@@ -307,5 +377,17 @@ export async function createComponentTest(
     try { rmSync(tempHome, { recursive: true, force: true }); } catch { /* ignore */ }
   }
 
-  return { cwd: tempDir, homeDir: tempHome, session, events, notifications, sendUserMessage, runCommand, mockAgentResponse, waitForIdle, dispose };
+  return {
+    cwd: tempDir,
+    homeDir: tempHome,
+    session,
+    events,
+    notifications,
+    sendUserMessage,
+    runCommand,
+    mockAgentResponse,
+    invokeTool,
+    waitForIdle,
+    dispose,
+  };
 }

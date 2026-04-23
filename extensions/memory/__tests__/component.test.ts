@@ -218,7 +218,7 @@ describe("memory slash commands (component)", () => {
 
 // ── Agent Tool Tests ───────────────────────────────────────────────
 
-describe("memory agent tools (component)", () => {
+describe("memory tools (component)", () => {
   let test: ComponentTestSession | undefined;
 
   afterEach(() => {
@@ -232,12 +232,15 @@ describe("memory agent tools (component)", () => {
     test = await createComponentTest({ shownModules: ["memory"] });
     const name = freshStore();
 
-    test.sendUserMessage("create a store");
-    await test.mockAgentResponse({ toolCalls: [{ name: "memory_create", args: { store: name } }] });
+    const result = await test.invokeTool("memory_create", { store: name });
 
-    const results = test.events.toolResults();
-    expect(results).toHaveLength(1);
-    expect(JSON.stringify(results[0].result)).toContain("Created");
+    expect(result.toolName).toBe("memory_create");
+    expect(result.isError).toBe(false);
+    expect(JSON.stringify(result.result)).toContain("Created");
+    expect(test.events.toolCalls()[0]).toEqual({
+      toolName: "memory_create",
+      args: { store: name },
+    });
   });
 
   it("memory_add tool adds a key", async () => {
@@ -245,13 +248,10 @@ describe("memory agent tools (component)", () => {
     const name = freshStore();
     createStore(test!.cwd, name);
 
-    test.sendUserMessage("add a key");
-    await test.mockAgentResponse({
-      toolCalls: [{ name: "memory_add", args: { store: name, key: "k1", value: "hello" } }],
-    });
+    const result = await test.invokeTool("memory_add", { store: name, key: "k1", value: "hello" });
 
-    const results = test.events.toolResults();
-    expect(JSON.stringify(results[0].result)).toContain("Added");
+    expect(result.isError).toBe(false);
+    expect(JSON.stringify(result.result)).toContain("Added");
   });
 
   it("memory_get tool retrieves a value", async () => {
@@ -260,13 +260,10 @@ describe("memory agent tools (component)", () => {
     createStore(test!.cwd, name);
     addEntry(test!.cwd, name, "k1", "secret");
 
-    test.sendUserMessage("get k1");
-    await test.mockAgentResponse({
-      toolCalls: [{ name: "memory_get", args: { store: name, key: "k1" } }],
-    });
+    const result = await test.invokeTool("memory_get", { store: name, key: "k1" });
 
-    const results = test.events.toolResults();
-    expect(JSON.stringify(results[0].result)).toContain("secret");
+    expect(result.isError).toBe(false);
+    expect(JSON.stringify(result.result)).toContain("secret");
   });
 
   it("memory_list tool lists stores when no store arg", async () => {
@@ -274,13 +271,10 @@ describe("memory agent tools (component)", () => {
     const name = freshStore();
     createStore(test!.cwd, name);
 
-    test.sendUserMessage("list stores");
-    await test.mockAgentResponse({
-      toolCalls: [{ name: "memory_list", args: {} }],
-    });
+    const result = await test.invokeTool("memory_list", {});
 
-    const results = test.events.toolResults();
-    expect(JSON.stringify(results[0].result)).toContain(name);
+    expect(result.isError).toBe(false);
+    expect(JSON.stringify(result.result)).toContain(name);
   });
 
   it("memory_list tool lists keys when store specified", async () => {
@@ -289,13 +283,10 @@ describe("memory agent tools (component)", () => {
     createStore(test!.cwd, name);
     addEntry(test!.cwd, name, "alpha", "1");
 
-    test.sendUserMessage("list keys");
-    await test.mockAgentResponse({
-      toolCalls: [{ name: "memory_list", args: { store: name } }],
-    });
+    const result = await test.invokeTool("memory_list", { store: name });
 
-    const results = test.events.toolResults();
-    expect(JSON.stringify(results[0].result)).toContain("alpha");
+    expect(result.isError).toBe(false);
+    expect(JSON.stringify(result.result)).toContain("alpha");
   });
 
   it("memory_delete tool deletes a key", async () => {
@@ -304,13 +295,10 @@ describe("memory agent tools (component)", () => {
     createStore(test!.cwd, name);
     addEntry(test!.cwd, name, "k1", "v");
 
-    test.sendUserMessage("delete k1");
-    await test.mockAgentResponse({
-      toolCalls: [{ name: "memory_delete", args: { store: name, key: "k1" } }],
-    });
+    const result = await test.invokeTool("memory_delete", { store: name, key: "k1" });
 
-    const results = test.events.toolResults();
-    expect(JSON.stringify(results[0].result)).toContain("Deleted");
+    expect(result.isError).toBe(false);
+    expect(JSON.stringify(result.result)).toContain("Deleted");
   });
 
   it("memory_create tool returns error for duplicate", async () => {
@@ -318,13 +306,9 @@ describe("memory agent tools (component)", () => {
     const name = freshStore();
     createStore(test!.cwd, name);
 
-    test.sendUserMessage("create store");
-    await test.mockAgentResponse({
-      toolCalls: [{ name: "memory_create", args: { store: name } }],
-    });
+    const result = await test.invokeTool("memory_create", { store: name });
 
-    const results = test.events.toolResults();
-    expect(JSON.stringify(results[0].result)).toContain("already exists");
+    expect(JSON.stringify(result.result)).toContain("already exists");
   });
 
   it("memory_get tool returns error for missing key", async () => {
@@ -332,25 +316,17 @@ describe("memory agent tools (component)", () => {
     const name = freshStore();
     createStore(test!.cwd, name);
 
-    test.sendUserMessage("get missing");
-    await test.mockAgentResponse({
-      toolCalls: [{ name: "memory_get", args: { store: name, key: "nope" } }],
-    });
+    const result = await test.invokeTool("memory_get", { store: name, key: "nope" });
 
-    const results = test.events.toolResults();
-    expect(JSON.stringify(results[0].result)).toContain("not found");
+    expect(JSON.stringify(result.result)).toContain("not found");
   });
 
   it("memory_add tool returns error for missing store", async () => {
     test = await createComponentTest({ shownModules: ["memory"] });
 
-    test.sendUserMessage("add key");
-    await test.mockAgentResponse({
-      toolCalls: [{ name: "memory_add", args: { store: "nonexistent", key: "k", value: "v" } }],
-    });
+    const result = await test.invokeTool("memory_add", { store: "nonexistent", key: "k", value: "v" });
 
-    const results = test.events.toolResults();
-    expect(JSON.stringify(results[0].result)).toContain("does not exist");
+    expect(JSON.stringify(result.result)).toContain("does not exist");
   });
 
 });

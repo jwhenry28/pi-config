@@ -119,39 +119,27 @@ describe("timer extension (component)", () => {
   it("set_timer tool creates a timer and returns confirmation", async () => {
     test = await createComponentTest({ shownModules: ["timer"] });
 
-    test.sendUserMessage("set a timer for 5 minutes");
-
-    await test.mockAgentResponse({
-      toolCalls: [
-        {
-          name: "set_timer",
-          args: { duration: "5m", prompt: "Check the build", recurring: false },
-        },
-      ],
+    const result = await test.invokeTool("set_timer", {
+      duration: "5m",
+      prompt: "Check the build",
+      recurring: false,
     });
 
-    const results = test.events.toolResults();
-    expect(results).toHaveLength(1);
-    expect(JSON.stringify(results[0].result)).toContain("5m");
-    expect(JSON.stringify(results[0].result)).toContain("Check the build");
+    expect(result.isError).toBe(false);
+    expect(JSON.stringify(result.result)).toContain("5m");
+    expect(JSON.stringify(result.result)).toContain("Check the build");
   });
 
   it("set_timer tool with invalid duration returns error", async () => {
     test = await createComponentTest({ shownModules: ["timer"] });
 
-    test.sendUserMessage("set a timer");
-
-    await test.mockAgentResponse({
-      toolCalls: [
-        {
-          name: "set_timer",
-          args: { duration: "abc", prompt: "Do stuff", recurring: false },
-        },
-      ],
+    const result = await test.invokeTool("set_timer", {
+      duration: "abc",
+      prompt: "Do stuff",
+      recurring: false,
     });
 
-    const results = test.events.toolResults();
-    expect(results).toHaveLength(1);
-    expect(JSON.stringify(results[0].result)).toContain("Invalid duration");
+    expect(result.isError).toBe(false);
+    expect(JSON.stringify(result.result)).toContain("Invalid duration");
   });
 });

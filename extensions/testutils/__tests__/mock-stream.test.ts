@@ -2,10 +2,24 @@ import { describe, it, expect } from "vitest";
 import { MockStreamController, createDummyModel } from "../component/mock-stream.js";
 
 describe("MockStreamController", () => {
+  it("fails immediately when streamFn is called without a queued response", async () => {
+    const controller = new MockStreamController();
+    const model = createDummyModel();
+
+    const events: any[] = [];
+    for await (const event of controller.streamFn(model, { messages: [] } as any)) {
+      events.push(event);
+    }
+
+    expect(controller.consumePendingError()?.message).toContain("queued mock response");
+    expect(events.some((e) => e.type === "error")).toBe(true);
+  });
+
   it("yields a text response", async () => {
     const controller = new MockStreamController();
     const model = createDummyModel();
 
+    const providePromise = controller.provide({ text: "Hello world" });
     const eventStream = controller.streamFn(model, { messages: [] });
 
     const eventsPromise = (async () => {
@@ -16,10 +30,6 @@ describe("MockStreamController", () => {
       return events;
     })();
 
-    // provide() waits for consumption; since there's no agent loop calling
-    // streamFn again, we need to notifyIdle after a delay
-    const providePromise = controller.provide({ text: "Hello world" });
-    await new Promise((r) => setTimeout(r, 50));
     controller.notifyIdle();
     await providePromise;
 
@@ -36,6 +46,7 @@ describe("MockStreamController", () => {
     const controller = new MockStreamController();
     const model = createDummyModel();
 
+    const providePromise = controller.provide({ toolCalls: [{ name: "read_file", args: { path: "foo.txt" } }] });
     const eventStream = controller.streamFn(model, { messages: [] });
 
     const eventsPromise = (async () => {
@@ -46,8 +57,6 @@ describe("MockStreamController", () => {
       return events;
     })();
 
-    const providePromise = controller.provide({ toolCalls: [{ name: "read_file", args: { path: "foo.txt" } }] });
-    await new Promise((r) => setTimeout(r, 50));
     controller.notifyIdle();
     await providePromise;
 
