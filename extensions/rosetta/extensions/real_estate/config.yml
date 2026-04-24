@@ -3,12 +3,23 @@ executor: python3
 entrypoint: ./main.py
 tools:
   - name: query_realtor_api
-    description: Query realtor.com property details by address
+    description: Query realtor.com property details by address, city, state, and zipcode
+    argv:
+      - query
     input_schema:
       type: object
       properties:
         address:
           type: string
+          description: Street address, excluding city/state/zipcode
+        city:
+          type: string
+        state:
+          type: string
+          description: Two-letter state code preferred; full state name is also accepted
+        zipcode:
+          type: string
+          description: Five-digit ZIP code
         mode:
           type: string
           enum:
@@ -17,3 +28,147 @@ tools:
       additionalProperties: false
       required:
         - address
+        - city
+        - state
+        - zipcode
+  - name: compsheet_new
+    description: Create a new real estate compsheet CSV
+    argv:
+      - compsheet
+      - new
+    input_schema:
+      type: object
+      properties:
+        name:
+          type: string
+      additionalProperties: false
+      required:
+        - name
+  - name: compsheet_list
+    description: List stored real estate compsheets
+    argv:
+      - compsheet
+      - list
+    input_schema:
+      type: object
+      properties: {}
+      additionalProperties: false
+  - name: compsheet_add
+    description: Add a sold Realtor property summary to a compsheet CSV
+    argv:
+      - compsheet
+      - add
+    input_schema:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Exact stored compsheet name
+        address:
+          type: string
+          description: Street address, excluding city/state/zipcode
+        city:
+          type: string
+        state:
+          type: string
+          description: Two-letter state code preferred; full state name is also accepted
+        zipcode:
+          type: string
+          description: Five-digit ZIP code
+      additionalProperties: false
+      required:
+        - name
+        - address
+        - city
+        - state
+        - zipcode
+  - name: compsheet_dump
+    description: Dump properties from a compsheet CSV
+    argv:
+      - compsheet
+      - dump
+    input_schema:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Exact stored compsheet name
+        full:
+          type: boolean
+          description: Return full row objects when true; defaults to address summaries
+      additionalProperties: false
+      required:
+        - name
+  - name: compsheet_remove
+    description: Remove a property from a compsheet CSV by property_id
+    argv:
+      - compsheet
+      - remove
+    input_schema:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Exact stored compsheet name
+        property_id:
+          type: string
+      additionalProperties: false
+      required:
+        - name
+        - property_id
+  - name: compsheet_delete
+    description: Delete an entire compsheet directory
+    argv:
+      - compsheet
+      - delete
+    input_schema:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Exact stored compsheet name
+      additionalProperties: false
+      required:
+        - name
+commands:
+  - name: compsheet
+    description: Manage real estate compsheets
+    subcommands:
+      - name: new
+        description: Create a new compsheet CSV
+        argv:
+          - compsheet
+          - new
+        rest_parameter: name
+        usage: "Usage: /compsheet new <name>"
+      - name: list
+        description: List stored compsheets
+        argv:
+          - compsheet
+          - list
+        usage: "Usage: /compsheet list"
+      - name: add
+        description: Add a sold property to a compsheet
+        argv:
+          - compsheet
+          - add
+        usage: 'Usage: /compsheet add {"name":"stored-name","address":"123 Main St","city":"Austin","state":"TX","zipcode":"78701"}'
+      - name: dump
+        description: Dump properties from a compsheet
+        argv:
+          - compsheet
+          - dump
+        usage: 'Usage: /compsheet dump {"name":"stored-name","full":false}'
+      - name: remove
+        description: Remove a property from a compsheet by property_id
+        argv:
+          - compsheet
+          - remove
+        usage: 'Usage: /compsheet remove {"name":"stored-name","property_id":"123"}'
+      - name: delete
+        description: Delete a compsheet
+        argv:
+          - compsheet
+          - delete
+        rest_parameter: name
+        usage: "Usage: /compsheet delete <name>"

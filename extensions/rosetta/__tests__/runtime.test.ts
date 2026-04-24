@@ -38,6 +38,17 @@ describe("executePythonTool", () => {
     expect(execFileMock.mock.calls[0][1]).toEqual(["/tmp/main.py", '{"name":"Joseph"}']);
   });
 
+  it("inserts configured argv before the serialized JSON argument", async () => {
+    execFileMock.mockImplementation((_cmd, _args, callback) => {
+      callback(null, { stdout: '{"result":"created"}', stderr: "" });
+    });
+
+    const result = await executePythonTool("/tmp/main.py", { name: "My Sheet" }, ["compsheet", "new"]);
+
+    expect(result).toBe("created");
+    expect(execFileMock.mock.calls[0][1]).toEqual(["/tmp/main.py", "compsheet", "new", '{"name":"My Sheet"}']);
+  });
+
   it("includes exit code and stderr for non-zero exits", async () => {
     execFileMock.mockImplementation((_cmd, _args, callback) => {
       const error: any = new Error("failed");
