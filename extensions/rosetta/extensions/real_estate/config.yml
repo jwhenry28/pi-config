@@ -1,0 +1,19 @@
+name: real_estate
+executor: python3
+entrypoint: ./main.py
+tools:
+  - name: query_realtor_api
+    description: Query realtor.com property details by address
+    input_schema:
+      type: object
+      properties:
+        address:
+          type: string
+        mode:
+          type: string
+          enum:
+            - for_sale
+            - sold
+      additionalProperties: false
+      required:
+        - address

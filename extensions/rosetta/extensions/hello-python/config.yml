@@ -1,0 +1,12 @@
+name: hello-python
+executor: python3
+entrypoint: ./main.py
+tools:
+  - name: hello_python
+    description: Say hello from Python
+    input_schema:
+      type: object
+      properties:
+        name:
+          type: string
+      additionalProperties: false

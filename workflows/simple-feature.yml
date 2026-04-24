@@ -1,4 +1,4 @@
-name: CFG Simple Feature
+name: Simple Feature
 steps:
   - name: Brainstorm
     model: smart

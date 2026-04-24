@@ -1,0 +1,73 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { execFileMock } = vi.hoisted(() => ({
+  execFileMock: vi.fn(),
+}));
+
+vi.mock("node:child_process", () => ({
+  execFile: execFileMock,
+}));
+
+import { executePythonTool, parsePythonToolOutput } from "../runtime.js";
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+describe("executePythonTool", () => {
+  it("passes empty input as an empty JSON object string", async () => {
+    execFileMock.mockImplementation((_cmd, _args, callback) => {
+      callback(null, { stdout: '{"result":"Hello from Python!"}', stderr: "" });
+    });
+
+    const result = await executePythonTool("/tmp/main.py", undefined);
+
+    expect(result).toBe("Hello from Python!");
+    expect(execFileMock.mock.calls[0][0]).toBe("python3");
+    expect(execFileMock.mock.calls[0][1]).toEqual(["/tmp/main.py", "{}"]);
+  });
+
+  it("serializes named input as one JSON argument", async () => {
+    execFileMock.mockImplementation((_cmd, _args, callback) => {
+      callback(null, { stdout: '{"result":"Hello from Python, Joseph!"}', stderr: "" });
+    });
+
+    const result = await executePythonTool("/tmp/main.py", { name: "Joseph" });
+
+    expect(result).toBe("Hello from Python, Joseph!");
+    expect(execFileMock.mock.calls[0][1]).toEqual(["/tmp/main.py", '{"name":"Joseph"}']);
+  });
+
+  it("includes exit code and stderr for non-zero exits", async () => {
+    execFileMock.mockImplementation((_cmd, _args, callback) => {
+      const error: any = new Error("failed");
+      error.code = 2;
+      error.stderr = "traceback here";
+      callback(error, { stdout: "", stderr: "traceback here" });
+    });
+
+    await expect(executePythonTool("/tmp/main.py", {})).rejects.toThrow(
+      "Rosetta Python tool failed with exit code 2. stderr: traceback here",
+    );
+  });
+});
+
+describe("parsePythonToolOutput", () => {
+  it("throws useful errors for python-level failures", () => {
+    expect(() => parsePythonToolOutput('{"error":"descriptive error"}')).toThrow(
+      "Rosetta Python tool error: descriptive error",
+    );
+  });
+
+  it("fails clearly for invalid JSON", () => {
+    expect(() => parsePythonToolOutput("not-json", "stderr text")).toThrow(
+      "Rosetta Python tool returned invalid JSON. stderr: stderr text",
+    );
+  });
+
+  it("fails clearly when result and error are both missing", () => {
+    expect(() => parsePythonToolOutput('{"ok":true}')).toThrow(
+      'Rosetta Python tool output must contain either "result" or "error"',
+    );
+  });
+});
