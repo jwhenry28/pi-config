@@ -84,6 +84,11 @@ export function validateRosettaConfig(raw: unknown, extensionDir: string): Roset
     return `invalid config in ${extensionDir}: name must be a non-empty string`;
   }
 
+  const hasValidModule = typeof config.module === "string" && config.module.trim().length > 0;
+  if (!hasValidModule) {
+    return `invalid config in ${extensionDir}: module must be a non-empty string`;
+  }
+
   const usesSupportedExecutor = config.executor === ROSETTA_EXECUTOR;
   if (!usesSupportedExecutor) {
     return `invalid config in ${extensionDir}: executor must be exactly "${ROSETTA_EXECUTOR}"`;
@@ -119,6 +124,7 @@ export function validateRosettaConfig(raw: unknown, extensionDir: string): Roset
 
   return {
     name: config.name,
+    module: config.module.trim(),
     directory: extensionDir,
     entrypoint: resolvedEntrypoint,
     tools,
@@ -280,9 +286,9 @@ function validateRosettaSubcommand(
     return argv;
   }
 
-  const restParameterError = validateOptionalString(subcommand.rest_parameter, "rest_parameter", commandName, subcommand.name, extensionDir);
-  if (restParameterError) {
-    return restParameterError;
+  const hasInputSchema = typeof subcommand.input_schema === "object" && subcommand.input_schema !== null && !Array.isArray(subcommand.input_schema);
+  if (!hasInputSchema) {
+    return `invalid config in ${extensionDir}: subcommand "${commandName} ${subcommand.name}" must have an object input_schema`;
   }
 
   const usageError = validateOptionalString(subcommand.usage, "usage", commandName, subcommand.name, extensionDir);
@@ -294,7 +300,7 @@ function validateRosettaSubcommand(
     name: subcommand.name,
     description: subcommand.description,
     argv,
-    rest_parameter: subcommand.rest_parameter,
+    input_schema: subcommand.input_schema as Record<string, unknown>,
     usage: subcommand.usage,
   };
 }

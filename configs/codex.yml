@@ -1,8 +1,8 @@
 name: codex
 configs:
   - name: smart
-    value: gpt-5.5
+    value: openai-codex/gpt-5.5
   - name: general
-    value: gpt-5.3-codex
+    value: openai-codex/gpt-5.4
   - name: fast
-    value: gpt-5.1-codex-mini
+    value: openai-codex/gpt-5.4-mini

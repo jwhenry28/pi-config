@@ -31,8 +31,10 @@ def handle_query_command(raw_input: str) -> None:
     try:
         response_json = query_realtor_api(address, city, state, zipcode, mode)
         property_summary = extract_first_property_summary(response_json)
-    except RealtorApiError:
-        print_error("Failed to query realtor.com API")
+    except RealtorApiError as error:
+        error_detail = str(error).strip()
+        message = f"Failed to query realtor.com API: {error_detail}" if error_detail else "Failed to query realtor.com API"
+        print_error(message)
         return
     except MalformedApiResponseError:
         print_error("Malformed API response from realtor.com")

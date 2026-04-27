@@ -9,7 +9,7 @@ export interface RosettaCommandSubcommandConfig {
   name: string;
   description?: string;
   argv: string[];
-  rest_parameter?: string;
+  input_schema: Record<string, unknown>;
   usage?: string;
 }
 
@@ -21,6 +21,7 @@ export interface RosettaCommandConfig {
 
 export interface RosettaConfig {
   name: string;
+  module: string;
   executor: "python3";
   entrypoint: string;
   tools: RosettaToolConfig[];
@@ -29,6 +30,7 @@ export interface RosettaConfig {
 
 export interface RosettaLoadedExtension {
   name: string;
+  module: string;
   directory: string;
   entrypoint: string;
   tools: RosettaToolConfig[];

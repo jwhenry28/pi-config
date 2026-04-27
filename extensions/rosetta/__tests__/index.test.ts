@@ -74,7 +74,7 @@ function writeHelloFixture(projectDir: string, extensionName = "hello-python", t
   mkdirSync(extensionDir, { recursive: true });
   writeFileSync(
     join(extensionDir, "config.yml"),
-    `name: ${extensionName}\nexecutor: python3\nentrypoint: ./main.py\ntools:\n  - name: ${toolName}\n    description: Say hello from Python\n    input_schema:\n      type: object\n      properties:\n        name:\n          type: string\n      additionalProperties: false\n`,
+    `name: ${extensionName}\nmodule: ${extensionName}\nexecutor: python3\nentrypoint: ./main.py\ntools:\n  - name: ${toolName}\n    description: Say hello from Python\n    input_schema:\n      type: object\n      properties:\n        name:\n          type: string\n      additionalProperties: false\n`,
   );
   writeFileSync(join(extensionDir, "main.py"), "print('ok')\n");
 }
@@ -84,7 +84,7 @@ function writeCompsheetCommandFixture(projectDir: string, extensionName = "real-
   mkdirSync(extensionDir, { recursive: true });
   writeFileSync(
     join(extensionDir, "config.yml"),
-    `name: ${extensionName}\nexecutor: python3\nentrypoint: ./main.py\ntools:\n  - name: compsheet_new_${extensionName}\n    description: Create a compsheet\n    argv:\n      - compsheet\n      - new\n    input_schema:\n      type: object\ncommands:\n  - name: ${commandName}\n    description: Manage compsheets\n    subcommands:\n      - name: new\n        description: Create a compsheet\n        argv:\n          - compsheet\n          - new\n        rest_parameter: name\n        usage: "Usage: /${commandName} new <name>"\n`,
+    `name: ${extensionName}\nmodule: ${extensionName}\nexecutor: python3\nentrypoint: ./main.py\ntools:\n  - name: compsheet_new_${extensionName}\n    description: Create a compsheet\n    argv:\n      - compsheet\n      - new\n    input_schema:\n      type: object\ncommands:\n  - name: ${commandName}\n    description: Manage compsheets\n    subcommands:\n      - name: new\n        description: Create a compsheet\n        argv:\n          - compsheet\n          - new\n        input_schema:\n          type: object\n          properties:\n            name:\n              type: string\n          additionalProperties: false\n          required:\n            - name\n`,
   );
   writeFileSync(join(extensionDir, "main.py"), "print('ok')\n");
 }
@@ -108,10 +108,26 @@ describe("loadRosettaExtensions", () => {
     expect(result.warnings).toEqual([]);
     expect(result.extensions).toHaveLength(1);
     expect(result.extensions[0].name).toBe("hello-python");
+    expect(result.extensions[0].module).toBe("hello-python");
     expect(result.extensions[0].entrypoint).toBe(
       join(projectDir, ".pi", "extensions", "rosetta", "extensions", "hello-python", "main.py"),
     );
     expect(result.extensions[0].tools[0].name).toBe("hello_python");
+  });
+
+  it("warns and skips configs missing module", () => {
+    const projectDir = makeTempProject();
+    const extensionDir = join(projectDir, ".pi", "extensions", "rosetta", "extensions", "missing-module");
+    mkdirSync(extensionDir, { recursive: true });
+    writeFileSync(
+      join(extensionDir, "config.yml"),
+      "name: missing-module\nexecutor: python3\nentrypoint: ./main.py\ntools:\n  - name: hello_python\n    description: Say hello\n    input_schema:\n      type: object\n",
+    );
+
+    const result = loadRosettaExtensions(projectDir);
+
+    expect(result.extensions).toHaveLength(0);
+    expect(result.warnings[0]).toContain("module must be a non-empty string");
   });
 
   it("warns and skips invalid YAML", () => {
@@ -132,7 +148,7 @@ describe("loadRosettaExtensions", () => {
     mkdirSync(extensionDir, { recursive: true });
     writeFileSync(
       join(extensionDir, "config.yml"),
-      "name: bad-executor\nexecutor: python\nentrypoint: ./main.py\ntools:\n  - name: hello_python\n    description: Say hello\n    input_schema:\n      type: object\n",
+      "name: bad-executor\nmodule: bad-executor\nexecutor: python\nentrypoint: ./main.py\ntools:\n  - name: hello_python\n    description: Say hello\n    input_schema:\n      type: object\n",
     );
 
     const result = loadRosettaExtensions(projectDir);
@@ -147,7 +163,7 @@ describe("loadRosettaExtensions", () => {
     mkdirSync(extensionDir, { recursive: true });
     writeFileSync(
       join(extensionDir, "config.yml"),
-      "name: escape\nexecutor: python3\nentrypoint: ../outside.py\ntools:\n  - name: hello_python\n    description: Say hello\n    input_schema:\n      type: object\n",
+      "name: escape\nmodule: escape\nexecutor: python3\nentrypoint: ../outside.py\ntools:\n  - name: hello_python\n    description: Say hello\n    input_schema:\n      type: object\n",
     );
 
     const result = loadRosettaExtensions(projectDir);
@@ -162,7 +178,7 @@ describe("loadRosettaExtensions", () => {
     mkdirSync(extensionDir, { recursive: true });
     writeFileSync(
       join(extensionDir, "config.yml"),
-      "name: missing-tools\nexecutor: python3\nentrypoint: ./main.py\n",
+      "name: missing-tools\nmodule: missing-tools\nexecutor: python3\nentrypoint: ./main.py\n",
     );
 
     const result = loadRosettaExtensions(projectDir);
@@ -197,8 +213,16 @@ describe("loadRosettaExtensions", () => {
           name: "new",
           description: "Create a compsheet",
           argv: ["compsheet", "new"],
-          rest_parameter: "name",
-          usage: "Usage: /compsheet new <name>",
+          input_schema: {
+            type: "object",
+            properties: {
+              name: {
+                type: "string",
+              },
+            },
+            additionalProperties: false,
+            required: ["name"],
+          },
         },
       ],
     });
@@ -210,7 +234,7 @@ describe("loadRosettaExtensions", () => {
     mkdirSync(extensionDir, { recursive: true });
     writeFileSync(
       join(extensionDir, "config.yml"),
-      "name: bad-command\nexecutor: python3\nentrypoint: ./main.py\ntools:\n  - name: hello_python\n    description: Say hello\n    input_schema:\n      type: object\ncommands:\n  - name: compsheet\n    description: Manage compsheets\n",
+      "name: bad-command\nmodule: bad-command\nexecutor: python3\nentrypoint: ./main.py\ntools:\n  - name: hello_python\n    description: Say hello\n    input_schema:\n      type: object\ncommands:\n  - name: compsheet\n    description: Manage compsheets\n",
     );
 
     const result = loadRosettaExtensions(projectDir);
@@ -241,6 +265,10 @@ describe("rosettaExtension", () => {
     });
 
     expect(tools.has("hello_python")).toBe(true);
+    expect(pi.events.emit).toHaveBeenCalledWith("module:tool-tag", {
+      toolName: "hello_python",
+      moduleName: "hello-python",
+    });
     expect(notifications).toEqual([]);
   });
 
@@ -263,6 +291,11 @@ describe("rosettaExtension", () => {
 
     expect(commands.has("compsheet")).toBe(true);
     expect(commands.get("compsheet").description).toBe("Manage compsheets");
+    expect(pi.events.emit).toHaveBeenCalledTimes(1);
+    expect(pi.events.emit).toHaveBeenCalledWith("module:tool-tag", {
+      toolName: "compsheet_new_real-estate",
+      moduleName: "real-estate",
+    });
     expect(notifications).toEqual([]);
   });
 

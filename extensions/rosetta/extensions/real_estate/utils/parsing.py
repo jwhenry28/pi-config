@@ -18,8 +18,8 @@ def print_realtor_query_result(property_summary: Dict[str, Any]) -> None:
     print(json.dumps({"result": property_summary}))
 
 
-def print_compsheet_new_result(name: str, path: str) -> None:
-    print(json.dumps({"result": {"name": name, "path": path}}))
+def print_compsheet_new_result(name: str, path: str, target_path: str, target: Dict[str, Any]) -> None:
+    print(json.dumps({"result": {"name": name, "path": path, "target_path": target_path, "target": target}}))
 
 
 def print_error(message: str) -> None:

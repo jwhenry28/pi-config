@@ -63,8 +63,8 @@ STATE_CODES_BY_NAME = {
     "wyoming": "WY",
     "district of columbia": "DC",
 }
-FOR_SALE_QUERY = """query ConsumerSearchQuery($query: HomeSearchCriteria!, $limit: Int, $offset: Int, $sort_type: SearchSortType, $client_data: JSON, $bucket: SearchAPIBucket) {\n  home_search: home_search(\n    query: $query\n    limit: $limit\n    offset: $offset\n    sort_type: $sort_type\n    client_data: $client_data\n    bucket: $bucket\n  ) {\n    count\n    total\n    properties: results {\n      property_id\n      list_price\n      listing_id\n      status\n      price_reduced_amount\n      list_date\n      description {\n        beds\n        baths_consolidated\n        sqft\n        lot_sqft\n        type\n        sold_price\n        sold_date\n        year_built\n        garage\n        __typename\n      }\n      location {\n        address {\n          line\n          postal_code\n          state\n          state_code\n          city\n          __typename\n        }\n        county {\n          name\n          __typename\n        }\n        __typename\n      }\n      branding {\n        name\n        __typename\n      }\n      advertisers {\n        name\n        email\n        office {\n          name\n          __typename\n        }\n        phones {\n          number\n          __typename\n        }\n        __typename\n      }\n      __typename\n    }\n    __typename\n  }\n}"""
-SOLD_QUERY = """query ConsumerSearchQuery($query: HomeSearchCriteria!, $limit: Int, $offset: Int, $search_promotion: SearchPromotionInput, $sort: [SearchAPISort], $sort_type: SearchSortType, $client_data: JSON, $bucket: SearchAPIBucket, $mortgage_params: MortgageParamsInput, $photosLimit: Int) {\n  home_search: home_search(\n    query: $query\n    sort: $sort\n    limit: $limit\n    offset: $offset\n    sort_type: $sort_type\n    client_data: $client_data\n    bucket: $bucket\n    search_promotion: $search_promotion\n    mortgage_params: $mortgage_params\n  ) {\n    count\n    total\n    properties: results {\n      property_id\n      list_price\n      listing_id\n      status\n      price_reduced_amount\n      list_date\n      description {\n        beds\n        baths_consolidated\n        sqft\n        lot_sqft\n        type\n        sold_price\n        sold_date\n        year_built\n        garage\n        __typename\n      }\n      location {\n        address {\n          line\n          postal_code\n          state\n          state_code\n          city\n          __typename\n        }\n        county {\n          name\n          __typename\n        }\n        __typename\n      }\n      branding {\n        name\n        __typename\n      }\n      advertisers {\n        name\n        email\n        office {\n          name\n          __typename\n        }\n        phones {\n          number\n          __typename\n        }\n        __typename\n      }\n      __typename\n    }\n    __typename\n  }\n}"""
+FOR_SALE_QUERY = """query ConsumerSearchQuery($query: HomeSearchCriteria!, $limit: Int, $offset: Int, $sort_type: SearchSortType) {\n  home_search: home_search(\n    query: $query\n    limit: $limit\n    offset: $offset\n    sort_type: $sort_type\n  ) {\n    count\n    total\n    properties: results {\n      property_id\n      list_price\n      listing_id\n      status\n      price_reduced_amount\n      list_date\n      description {\n        beds\n        baths_consolidated\n        sqft\n        lot_sqft\n        type\n        sold_price\n        sold_date\n        year_built\n        garage\n        __typename\n      }\n      location {\n        address {\n          line\n          postal_code\n          state\n          state_code\n          city\n          coordinate {\n            lat\n            lon\n            __typename\n          }\n          __typename\n        }\n        county {\n          name\n          __typename\n        }\n        __typename\n      }\n      branding {\n        name\n        __typename\n      }\n      advertisers {\n        name\n        email\n        office {\n          name\n          __typename\n        }\n        phones {\n          number\n          __typename\n        }\n        __typename\n      }\n      __typename\n    }\n    __typename\n  }\n}"""
+SOLD_QUERY = """query ConsumerSearchQuery($query: HomeSearchCriteria!, $limit: Int, $offset: Int, $sort_type: SearchSortType) {\n  home_search: home_search(\n    query: $query\n    limit: $limit\n    offset: $offset\n    sort_type: $sort_type\n  ) {\n    count\n    total\n    properties: results {\n      property_id\n      list_price\n      listing_id\n      status\n      price_reduced_amount\n      list_date\n      description {\n        beds\n        baths_consolidated\n        sqft\n        lot_sqft\n        type\n        sold_price\n        sold_date\n        year_built\n        garage\n        __typename\n      }\n      location {\n        address {\n          line\n          postal_code\n          state\n          state_code\n          city\n          coordinate {\n            lat\n            lon\n            __typename\n          }\n          __typename\n        }\n        county {\n          name\n          __typename\n        }\n        __typename\n      }\n      branding {\n        name\n        __typename\n      }\n      advertisers {\n        name\n        email\n        office {\n          name\n          __typename\n        }\n        phones {\n          number\n          __typename\n        }\n        __typename\n      }\n      __typename\n    }\n    __typename\n  }\n}"""
 
 
 def query_realtor_api(address: str, city: str, state: str, zipcode: str, mode: str) -> Dict[str, Any]:
@@ -72,31 +72,49 @@ def query_realtor_api(address: str, city: str, state: str, zipcode: str, mode: s
     try:
         response = requests.post(API_URL, headers=REQUEST_HEADERS, json=payload, timeout=30)
         response.raise_for_status()
+        return response.json()
     except requests.RequestException as error:
-        raise RealtorApiError() from error
+        raise RealtorApiError(format_request_error(error)) from error
+    except ValueError as error:
+        raise RealtorApiError(f"Invalid JSON response: {error}") from error
 
-    return response.json()
+
+def format_request_error(error: requests.RequestException) -> str:
+    details = [error.__class__.__name__]
+    error_message = str(error).strip()
+    if error_message:
+        details.append(error_message)
+
+    response = error.response
+    if response is not None:
+        details.extend(format_response_details(response))
+
+    return "; ".join(details)
+
+
+def format_response_details(response: requests.Response) -> list[str]:
+    details = [f"status={response.status_code}"]
+    reason = response.reason.strip() if response.reason else ""
+    if reason:
+        details.append(f"reason={reason}")
+
+    body_snippet = response.text.strip()[:500]
+    if body_snippet:
+        details.append(f"body={body_snippet}")
+
+    return details
 
 
 def build_graphql_payload(address: str, city: str, state: str, zipcode: str, mode: str) -> Dict[str, Any]:
     query = build_property_query(address, city, state, zipcode, mode)
     variables = {
         "query": query,
-        "client_data": {
-            "device_data": {
-                "device_type": "desktop",
-            }
-        },
         "limit": 1,
         "offset": 0,
         "sort_type": "relevant",
-        "bucket": {
-            "sort": "fractal_v6.2.2",
-        },
     }
 
     if mode == "sold":
-        variables["photosLimit"] = 3
         graphql_query = SOLD_QUERY
     else:
         graphql_query = FOR_SALE_QUERY
@@ -166,6 +184,7 @@ def summarize_property(property_data: Dict[str, Any]) -> Dict[str, Any]:
     location = property_data.get("location") or {}
     address = location.get("address") or {}
     county = location.get("county") or {}
+    coordinate = extract_coordinate(location)
     branding = property_data.get("branding") or {}
     advertisers = property_data.get("advertisers") or []
     primary_advertiser = advertisers[0] if advertisers else {}
@@ -195,12 +214,44 @@ def summarize_property(property_data: Dict[str, Any]) -> Dict[str, Any]:
         "state_code": address.get("state_code"),
         "city": address.get("city"),
         "county": county.get("name"),
+        "latitude": coordinate.get("latitude"),
+        "longitude": coordinate.get("longitude"),
         "branding_name": get_branding_name(branding),
         "agent_name": primary_advertiser.get("name"),
         "agent_email": primary_advertiser.get("email"),
         "office_name": office.get("name"),
         "agent_phone": primary_phone.get("number"),
     }
+
+
+def extract_coordinate(location: Dict[str, Any]) -> Dict[str, Any]:
+    address = location.get("address") or {}
+    if not isinstance(address, dict):
+        address = {}
+
+    coordinate = (
+        address.get("coordinate")
+        or address.get("coordinates")
+        or location.get("coordinate")
+        or location.get("coordinates")
+        or {}
+    )
+    if not isinstance(coordinate, dict):
+        coordinate = {}
+
+    return {
+        "latitude": get_first_present_value(coordinate, ["lat", "latitude"]),
+        "longitude": get_first_present_value(coordinate, ["lon", "lng", "longitude"]),
+    }
+
+
+def get_first_present_value(values: Dict[str, Any], keys: list[str]) -> Any:
+    for key in keys:
+        value = values.get(key)
+        if value is not None:
+            return value
+
+    return None
 
 
 def get_branding_name(branding: Any) -> Optional[str]:

@@ -1,4 +1,5 @@
 import csv
+import json
 import re
 import shutil
 from pathlib import Path
@@ -6,6 +7,7 @@ from typing import Any, Dict, List
 
 COMPSHEET_ROOT_PARTS = (".pi", "rosetta", "real_estate", "compsheets")
 COMPSHEET_FILENAME = "compsheet.csv"
+TARGET_FILENAME = "target.json"
 COMPSHEET_HEADER = [
     "property_id",
     "list_price",
@@ -28,6 +30,8 @@ COMPSHEET_HEADER = [
     "state_code",
     "city",
     "county",
+    "latitude",
+    "longitude",
     "branding_name",
     "agent_name",
     "agent_email",
@@ -51,6 +55,12 @@ def create_compsheet_csv(normalized_name: str) -> Path:
     return compsheet_path
 
 
+def create_compsheet_with_target(normalized_name: str, target_summary: Dict[str, Any]) -> tuple[Path, Path]:
+    compsheet_path = create_compsheet_csv(normalized_name)
+    target_path = write_target_summary(normalized_name, target_summary)
+    return compsheet_path, target_path
+
+
 def list_compsheet_names() -> List[str]:
     compsheets_root = get_compsheets_root()
     if not compsheets_root.exists():
@@ -70,6 +80,30 @@ def read_compsheet_rows(stored_name: str) -> List[Dict[str, str]]:
         reader = csv.DictReader(csv_file)
         validate_compsheet_header(compsheet_path, reader.fieldnames)
         return list(reader)
+
+
+def write_target_summary(stored_name: str, target_summary: Dict[str, Any]) -> Path:
+    target_path = build_target_path(stored_name)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    with target_path.open("w") as target_file:
+        json.dump(target_summary, target_file, indent=2, sort_keys=True)
+        target_file.write("\n")
+
+    return target_path
+
+
+def read_target_summary(stored_name: str) -> Dict[str, Any]:
+    target_path = resolve_existing_target_path(stored_name)
+    with target_path.open() as target_file:
+        try:
+            target_summary = json.load(target_file)
+        except json.JSONDecodeError as error:
+            raise InvalidTargetSummaryError(target_path) from error
+
+    if not isinstance(target_summary, dict):
+        raise InvalidTargetSummaryError(target_path)
+
+    return target_summary
 
 
 def append_property_summary(stored_name: str, property_summary: Dict[str, Any]) -> None:
@@ -123,6 +157,14 @@ def resolve_existing_compsheet_csv_path(stored_name: str) -> Path:
     return compsheet_path
 
 
+def resolve_existing_target_path(stored_name: str) -> Path:
+    target_path = build_target_path(stored_name)
+    if not target_path.is_file():
+        raise TargetSummaryNotFoundError(stored_name)
+
+    return target_path
+
+
 def resolve_existing_compsheet_directory(stored_name: str) -> Path:
     compsheet_directory = resolve_compsheet_directory(stored_name)
     compsheet_path = compsheet_directory / COMPSHEET_FILENAME
@@ -142,11 +184,22 @@ def build_compsheet_path(normalized_name: str) -> Path:
     return resolve_compsheet_csv_path(normalized_name)
 
 
+def build_target_path(normalized_or_stored_name: str) -> Path:
+    return resolve_target_path(normalized_or_stored_name)
+
+
 def resolve_compsheet_csv_path(stored_name: str) -> Path:
     validate_stored_compsheet_name(stored_name)
     compsheet_path = get_compsheets_root() / stored_name / COMPSHEET_FILENAME
     validate_path_is_inside_compsheets_root(compsheet_path)
     return compsheet_path
+
+
+def resolve_target_path(stored_name: str) -> Path:
+    validate_stored_compsheet_name(stored_name)
+    target_path = get_compsheets_root() / stored_name / TARGET_FILENAME
+    validate_path_is_inside_compsheets_root(target_path)
+    return target_path
 
 
 def resolve_compsheet_directory(stored_name: str) -> Path:
@@ -190,6 +243,16 @@ class InvalidCompsheetNameError(Exception):
 class CompsheetNotFoundError(Exception):
     def __init__(self, stored_name: str):
         self.stored_name = stored_name
+
+
+class TargetSummaryNotFoundError(Exception):
+    def __init__(self, stored_name: str):
+        self.stored_name = stored_name
+
+
+class InvalidTargetSummaryError(Exception):
+    def __init__(self, target_path: Path):
+        self.target_path = target_path
 
 
 class InvalidCompsheetHeaderError(Exception):

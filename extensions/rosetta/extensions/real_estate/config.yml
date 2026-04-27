@@ -1,4 +1,5 @@
 name: real_estate
+module: real-estate
 executor: python3
 entrypoint: ./main.py
 tools:
@@ -39,11 +40,23 @@ tools:
     input_schema:
       type: object
       properties:
-        name:
+        address:
           type: string
+          description: Street address, excluding city/state/zipcode
+        city:
+          type: string
+        state:
+          type: string
+          description: Two-letter state code preferred; full state name is also accepted
+        zipcode:
+          type: string
+          description: Five-digit ZIP code
       additionalProperties: false
       required:
-        - name
+        - address
+        - city
+        - state
+        - zipcode
   - name: compsheet_list
     description: List stored real estate compsheets
     argv:
@@ -99,6 +112,30 @@ tools:
       additionalProperties: false
       required:
         - name
+  - name: compsheet_report
+    description: Report summary metrics for a stored real estate compsheet CSV
+    argv:
+      - compsheet
+      - report
+    input_schema:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Exact stored compsheet name
+        metrics:
+          type: string
+          description: Metric selector; defaults to all
+          enum:
+            - all
+            - sqft
+            - sale
+            - list
+            - price_per_sqft
+            - map
+      additionalProperties: false
+      required:
+        - name
   - name: compsheet_remove
     description: Remove a property from a compsheet CSV by property_id
     argv:
@@ -139,36 +176,120 @@ commands:
         argv:
           - compsheet
           - new
-        rest_parameter: name
-        usage: "Usage: /compsheet new <name>"
+        input_schema:
+          type: object
+          properties:
+            address:
+              type: string
+            city:
+              type: string
+            state:
+              type: string
+            zipcode:
+              type: string
+          additionalProperties: false
+          required:
+            - address
+            - city
+            - state
+            - zipcode
+        usage: 'Usage: /compsheet new --address "123 Main St" --city Austin --state TX --zipcode 78701'
       - name: list
         description: List stored compsheets
         argv:
           - compsheet
           - list
+        input_schema:
+          type: object
+          properties: {}
+          additionalProperties: false
         usage: "Usage: /compsheet list"
       - name: add
         description: Add a sold property to a compsheet
         argv:
           - compsheet
           - add
-        usage: 'Usage: /compsheet add {"name":"stored-name","address":"123 Main St","city":"Austin","state":"TX","zipcode":"78701"}'
+        input_schema:
+          type: object
+          properties:
+            name:
+              type: string
+            address:
+              type: string
+            city:
+              type: string
+            state:
+              type: string
+            zipcode:
+              type: string
+          additionalProperties: false
+          required:
+            - name
+            - address
+            - city
+            - state
+            - zipcode
+        usage: 'Usage: /compsheet add --name "stored-name" --address "123 Main St" --city Austin --state TX --zipcode 78701'
       - name: dump
         description: Dump properties from a compsheet
         argv:
           - compsheet
           - dump
-        usage: 'Usage: /compsheet dump {"name":"stored-name","full":false}'
+        input_schema:
+          type: object
+          properties:
+            name:
+              type: string
+            full:
+              type: boolean
+          additionalProperties: false
+          required:
+            - name
+        usage: 'Usage: /compsheet dump --name "stored-name" --full false'
+      - name: report
+        description: Report summary metrics for a compsheet
+        argv:
+          - compsheet
+          - report
+        input_schema:
+          type: object
+          properties:
+            name:
+              type: string
+            metrics:
+              type: string
+          additionalProperties: false
+          required:
+            - name
+        usage: 'Usage: /compsheet report --name "stored-name" --metrics all'
       - name: remove
         description: Remove a property from a compsheet by property_id
         argv:
           - compsheet
           - remove
-        usage: 'Usage: /compsheet remove {"name":"stored-name","property_id":"123"}'
+        input_schema:
+          type: object
+          properties:
+            name:
+              type: string
+            property_id:
+              type: string
+          additionalProperties: false
+          required:
+            - name
+            - property_id
+        usage: 'Usage: /compsheet remove --name "stored-name" --property_id 123'
       - name: delete
         description: Delete a compsheet
         argv:
           - compsheet
           - delete
-        rest_parameter: name
-        usage: "Usage: /compsheet delete <name>"
+        input_schema:
+          type: object
+          properties:
+            name:
+              type: string
+          additionalProperties: false
+          required:
+            - name
+        usage: 'Usage: /compsheet delete --name "stored-name"'

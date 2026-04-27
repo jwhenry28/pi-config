@@ -3,22 +3,56 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-export async function executePythonTool(entrypoint: string, input: unknown, argv: string[] = []): Promise<string> {
-  const jsonArg = JSON.stringify(input ?? {});
+export interface ExecutePythonToolOptions {
+  throwOnJsonError?: boolean;
+}
 
+export async function executePythonTool(
+  entrypoint: string,
+  input: unknown,
+  argv: string[] = [],
+  options: ExecutePythonToolOptions = {},
+): Promise<string> {
+  const jsonArg = JSON.stringify(input ?? {});
+  const { stdout, stderr } = await runPythonTool(entrypoint, argv, jsonArg);
+
+  return parsePythonToolOutput(stdout, stderr, options);
+}
+
+async function runPythonTool(entrypoint: string, argv: string[], jsonArg: string): Promise<{ stdout: string; stderr: string }> {
   try {
-    const { stdout, stderr } = await execFileAsync("python3", [entrypoint, ...argv, jsonArg]);
-    return parsePythonToolOutput(stdout, stderr);
+    return await execFileAsync("python3", [entrypoint, ...argv, jsonArg]);
   } catch (error) {
-    const err = error as Error & { code?: number | string; stderr?: string };
-    const exitCode = err.code ?? "unknown";
-    const hasStderr = typeof err.stderr === "string" && err.stderr.trim().length > 0;
-    const stderrText = hasStderr ? ` stderr: ${err.stderr?.trim()}` : "";
-    throw new Error(`Rosetta Python tool failed with exit code ${exitCode}.${stderrText}`);
+    throw new Error(formatPythonExecutionError(error));
   }
 }
 
-export function parsePythonToolOutput(stdout: string, stderr?: string): string {
+function formatPythonExecutionError(error: unknown): string {
+  const err = error as Error & { code?: number | string; signal?: string; stderr?: string; stdout?: string };
+  const exitCode = err.code ?? "unknown";
+  const details = [
+    formatErrorDetail("message", err.message),
+    formatErrorDetail("signal", err.signal),
+    formatErrorDetail("stderr", err.stderr),
+    formatErrorDetail("stdout", err.stdout),
+  ].filter((detail) => detail.length > 0);
+
+  return [`Rosetta Python tool failed with exit code ${exitCode}.`, ...details].join(" ");
+}
+
+function formatErrorDetail(label: string, value: unknown): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return "";
+  }
+
+  return `${label}: ${value.trim()}`;
+}
+
+export function parsePythonToolOutput(
+  stdout: string,
+  stderr?: string,
+  options: ExecutePythonToolOptions = {},
+): string {
   const trimmed = stdout.trim();
   if (!trimmed) {
     const hasStderr = typeof stderr === "string" && stderr.trim().length > 0;
@@ -37,6 +71,10 @@ export function parsePythonToolOutput(stdout: string, stderr?: string): string {
 
   const hasError = typeof parsed?.error === "string" && parsed.error.length > 0;
   if (hasError) {
+    if (options.throwOnJsonError === false) {
+      return JSON.stringify({ error: parsed.error });
+    }
+
     throw new Error(`Rosetta Python tool error: ${parsed.error}`);
   }
 

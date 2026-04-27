@@ -49,17 +49,38 @@ describe("executePythonTool", () => {
     expect(execFileMock.mock.calls[0][1]).toEqual(["/tmp/main.py", "compsheet", "new", '{"name":"My Sheet"}']);
   });
 
-  it("includes exit code and stderr for non-zero exits", async () => {
+  it("includes exit code, message, stderr, and stdout for non-zero exits", async () => {
     execFileMock.mockImplementation((_cmd, _args, callback) => {
       const error: any = new Error("failed");
       error.code = 2;
       error.stderr = "traceback here";
-      callback(error, { stdout: "", stderr: "traceback here" });
+      error.stdout = "partial stdout";
+      callback(error, { stdout: "partial stdout", stderr: "traceback here" });
     });
 
     await expect(executePythonTool("/tmp/main.py", {})).rejects.toThrow(
-      "Rosetta Python tool failed with exit code 2. stderr: traceback here",
+      "Rosetta Python tool failed with exit code 2. message: failed stderr: traceback here stdout: partial stdout",
     );
+  });
+
+  it("does not wrap Python JSON error output as an unknown process exit", async () => {
+    execFileMock.mockImplementation((_cmd, _args, callback) => {
+      callback(null, { stdout: '{"error":"address not found"}', stderr: "" });
+    });
+
+    await expect(executePythonTool("/tmp/main.py", {})).rejects.toThrow(
+      "Rosetta Python tool error: address not found",
+    );
+  });
+
+  it("can return Python JSON errors as tool output", async () => {
+    execFileMock.mockImplementation((_cmd, _args, callback) => {
+      callback(null, { stdout: '{"error":"address not found"}', stderr: "" });
+    });
+
+    const result = await executePythonTool("/tmp/main.py", {}, [], { throwOnJsonError: false });
+
+    expect(result).toBe('{"error":"address not found"}');
   });
 });
 
@@ -67,6 +88,12 @@ describe("parsePythonToolOutput", () => {
   it("throws useful errors for python-level failures", () => {
     expect(() => parsePythonToolOutput('{"error":"descriptive error"}')).toThrow(
       "Rosetta Python tool error: descriptive error",
+    );
+  });
+
+  it("returns JSON errors when throwing is disabled", () => {
+    expect(parsePythonToolOutput('{"error":"descriptive error"}', undefined, { throwOnJsonError: false })).toBe(
+      '{"error":"descriptive error"}',
     );
   });
 

@@ -46,6 +46,7 @@ function writeCompsheetFixture(projectDir: string) {
   writeFileSync(
     join(extensionDir, "config.yml"),
     `name: real-estate
+module: real-estate
 executor: python3
 entrypoint: ./main.py
 tools:
@@ -71,8 +72,16 @@ commands:
         argv:
           - compsheet
           - new
-        rest_parameter: name
-        usage: "Usage: /compsheet new <name>"
+        input_schema:
+          type: object
+          properties:
+            name:
+              type: string
+            full:
+              type: boolean
+          additionalProperties: false
+          required:
+            - name
 `,
   );
   writeFileSync(join(extensionDir, "main.py"), "print('ok')\n");
@@ -120,19 +129,23 @@ describe("Rosetta argv mapping", () => {
     await queryTool.execute("tool-call-1", { address: "123 Main" });
     await compsheetTool.execute("tool-call-2", { name: "My Sheet" });
 
-    expect(executePythonToolMock).toHaveBeenNthCalledWith(1, entrypoint, { address: "123 Main" }, ["query"]);
-    expect(executePythonToolMock).toHaveBeenNthCalledWith(2, entrypoint, { name: "My Sheet" }, ["compsheet", "new"]);
+    expect(executePythonToolMock).toHaveBeenNthCalledWith(1, entrypoint, { address: "123 Main" }, ["query"], {
+      throwOnJsonError: false,
+    });
+    expect(executePythonToolMock).toHaveBeenNthCalledWith(2, entrypoint, { name: "My Sheet" }, ["compsheet", "new"], {
+      throwOnJsonError: false,
+    });
   });
 });
 
 describe("Rosetta slash command parsing", () => {
-  it("passes /compsheet new rest-of-line names to Python and notifies success", async () => {
+  it("passes /compsheet new flag values to Python and notifies success", async () => {
     const projectDir = makeTempProject();
     const entrypoint = writeCompsheetFixture(projectDir);
     const { commands, notifications } = await startRosetta(projectDir);
     executePythonToolMock.mockResolvedValue(JSON.stringify({ name: "my-sheet", path: "/tmp/my-sheet.csv" }));
 
-    await commands.get("compsheet").handler("new My Sheet", {
+    await commands.get("compsheet").handler('new --name "My Sheet"', {
       ui: { notify: (msg: string, level: string) => notifications.push({ msg, level }) },
     });
 
@@ -155,10 +168,10 @@ describe("Rosetta slash command parsing", () => {
     expect(executePythonToolMock).not.toHaveBeenCalled();
     expect(notifications).toHaveLength(2);
     expect(notifications.every((notification) => notification.level === "info")).toBe(true);
-    expect(notifications[0].msg).toContain("new <name>");
+    expect(notifications[0].msg).toContain("new --name <name> [--full <full>]");
   });
 
-  it("warns for unknown subcommands and missing names without calling Python", async () => {
+  it("warns for unknown subcommands and positional command input without calling Python", async () => {
     const projectDir = makeTempProject();
     writeCompsheetFixture(projectDir);
     const { commands, notifications } = await startRosetta(projectDir);
@@ -166,14 +179,14 @@ describe("Rosetta slash command parsing", () => {
     await commands.get("compsheet").handler("delete Old Sheet", {
       ui: { notify: (msg: string, level: string) => notifications.push({ msg, level }) },
     });
-    await commands.get("compsheet").handler("new", {
+    await commands.get("compsheet").handler("new My Sheet", {
       ui: { notify: (msg: string, level: string) => notifications.push({ msg, level }) },
     });
 
     expect(executePythonToolMock).not.toHaveBeenCalled();
     expect(notifications).toEqual([
       expect.objectContaining({ level: "warning", msg: expect.stringContaining("Unknown subcommand: delete") }),
-      expect.objectContaining({ level: "warning", msg: expect.stringContaining("Missing required argument: name") }),
+      expect.objectContaining({ level: "warning", msg: expect.stringContaining("Unexpected positional argument: My") }),
     ]);
   });
 
@@ -183,7 +196,7 @@ describe("Rosetta slash command parsing", () => {
     const { commands, notifications } = await startRosetta(projectDir);
     executePythonToolMock.mockRejectedValue(new Error("Rosetta Python tool error: Compsheet already exists: /tmp/x.csv"));
 
-    await commands.get("compsheet").handler("new Existing", {
+    await commands.get("compsheet").handler("new --name Existing", {
       ui: { notify: (msg: string, level: string) => notifications.push({ msg, level }) },
     });
 
