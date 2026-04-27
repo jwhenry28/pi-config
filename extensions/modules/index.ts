@@ -14,6 +14,7 @@ export default function modulesExtension(pi: ExtensionAPI) {
   let allSkills: ResolvedSkill[] = [];
   let modules: Map<string, ModuleContents> = new Map();
   let state: ModuleState = { shown: [], granular: {} };
+  let sessionHydrated = false;
   let initialized = false;
 
   /**
@@ -33,6 +34,17 @@ export default function modulesExtension(pi: ExtensionAPI) {
   });
 
   // --- Helpers ---
+
+  /**
+   * Set the session cwd and load skill metadata for module discovery.
+   */
+  function hydrateSession(nextCwd: string, force = false): void {
+    if (!force && cwd === nextCwd && sessionHydrated) return;
+    cwd = nextCwd;
+    allSkills = loadAllSkills(cwd);
+    sessionHydrated = true;
+    initialized = false;
+  }
 
   /**
    * Rediscover modules, reload state, and reapply tool filtering.
@@ -133,9 +145,7 @@ export default function modulesExtension(pi: ExtensionAPI) {
   // --- Event hooks ---
 
   pi.on("session_start", async (_event, ctx) => {
-    cwd = getCwd(ctx);
-    allSkills = loadAllSkills(cwd);
-    initialized = false;
+    hydrateSession(getCwd(ctx), true);
   });
 
   pi.on("before_agent_start", async (_event, ctx) => {
@@ -302,7 +312,12 @@ export default function modulesExtension(pi: ExtensionAPI) {
     setModules(data.names);
   });
 
-  pi.events.on("module:get-state", (data: { callback: (info: { shown: string[]; modules: Map<string, ModuleContents> }) => void }) => {
+  pi.events.on("module:get-state", (data: { cwd?: string; callback: (info: { shown: string[]; modules: Map<string, ModuleContents> }) => void }) => {
+    // Some callers (notably the startup header) may query module state from
+    // their own session_start handler before this extension's session_start
+    // handler has run. If they provide the session cwd, hydrate here so the
+    // response includes skill-backed modules, not just tool-tagged modules.
+    if (data.cwd) hydrateSession(data.cwd);
     ensureInitialized();
     const shownModules = state.shown ?? [];
     data.callback({ shown: [...shownModules], modules });

@@ -1,4 +1,5 @@
 name: hello-python
+module: hello-python
 executor: python3
 entrypoint: ./main.py
 tools:
