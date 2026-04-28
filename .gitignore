@@ -1,6 +1,7 @@
 # Extension stuff
 node_modules/
 plans/
+__pycache__/
 
 # User configurations (everything user-specific)
 .pi-config/

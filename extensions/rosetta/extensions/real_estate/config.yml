@@ -1,0 +1,353 @@
+name: real_estate
+module: real-estate
+executor: python3
+entrypoint: ./main.py
+tools:
+  - name: query_realtor_api
+    description: Query realtor.com property details by address, city, state, and zipcode
+    argv:
+      - query
+    input_schema:
+      type: object
+      properties:
+        address:
+          type: string
+          description: Street address, excluding city/state/zipcode
+        city:
+          type: string
+        state:
+          type: string
+          description: Two-letter state code preferred; full state name is also accepted
+        zipcode:
+          type: string
+          description: Five-digit ZIP code
+        mode:
+          type: string
+          enum:
+            - for_sale
+            - sold
+      additionalProperties: false
+      required:
+        - address
+        - city
+        - state
+        - zipcode
+  - name: compsheet_new
+    description: Create a new real estate compsheet CSV
+    argv:
+      - compsheet
+      - new
+    input_schema:
+      type: object
+      properties:
+        address:
+          type: string
+          description: Street address, excluding city/state/zipcode
+        city:
+          type: string
+        state:
+          type: string
+          description: Two-letter state code preferred; full state name is also accepted
+        zipcode:
+          type: string
+          description: Five-digit ZIP code
+      additionalProperties: false
+      required:
+        - address
+        - city
+        - state
+        - zipcode
+  - name: compsheet_list
+    description: List stored real estate compsheets
+    argv:
+      - compsheet
+      - list
+    input_schema:
+      type: object
+      properties: {}
+      additionalProperties: false
+  - name: compsheet_add
+    description: Add a sold Realtor property summary to a compsheet CSV
+    argv:
+      - compsheet
+      - add
+    input_schema:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Exact stored compsheet name
+        address:
+          type: string
+          description: Street address, excluding city/state/zipcode
+        city:
+          type: string
+        state:
+          type: string
+          description: Two-letter state code preferred; full state name is also accepted
+        zipcode:
+          type: string
+          description: Five-digit ZIP code
+      additionalProperties: false
+      required:
+        - name
+        - address
+        - city
+        - state
+        - zipcode
+  - name: compsheet_dump
+    description: Dump properties from a compsheet CSV
+    argv:
+      - compsheet
+      - dump
+    input_schema:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Exact stored compsheet name
+        full:
+          type: boolean
+          description: Return full row objects when true; defaults to address summaries
+      additionalProperties: false
+      required:
+        - name
+  - name: compsheet_report
+    description: Report summary metrics for a stored real estate compsheet CSV
+    argv:
+      - compsheet
+      - report
+    input_schema:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Exact stored compsheet name
+        metrics:
+          type: string
+          description: Metric selector; defaults to all
+          enum:
+            - all
+            - sqft
+            - sale
+            - list
+            - price_per_sqft
+            - map
+      additionalProperties: false
+      required:
+        - name
+  - name: compsheet_offer
+    description: Update or inspect offer details for a stored compsheet
+    argv:
+      - compsheet
+      - offer
+    input_schema:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Exact stored compsheet name
+        offer_price:
+          type: number
+          description: Offer price in dollars
+        down_payment:
+          type: number
+          description: Down payment percentage; 20 means 20%
+        interest_rate:
+          type: number
+          description: Annual interest rate percentage; 6.5 means 6.5%
+        annual_taxes:
+          type: number
+          description: Annual property taxes in dollars
+        annual_home_insurance:
+          type: number
+          description: Annual home insurance in dollars
+        other_monthly_costs:
+          type: number
+          description: Other monthly costs in dollars
+      additionalProperties: false
+      required:
+        - name
+  - name: compsheet_remove
+    description: Remove a property from a compsheet CSV by property_id
+    argv:
+      - compsheet
+      - remove
+    input_schema:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Exact stored compsheet name
+        property_id:
+          type: string
+      additionalProperties: false
+      required:
+        - name
+        - property_id
+  - name: compsheet_delete
+    description: Delete an entire compsheet directory
+    argv:
+      - compsheet
+      - delete
+    input_schema:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Exact stored compsheet name
+      additionalProperties: false
+      required:
+        - name
+commands:
+  - name: compsheet
+    description: Manage real estate compsheets
+    subcommands:
+      - name: new
+        description: Create a new compsheet CSV
+        argv:
+          - compsheet
+          - new
+        input_schema:
+          type: object
+          properties:
+            address:
+              type: string
+            city:
+              type: string
+            state:
+              type: string
+            zipcode:
+              type: string
+          additionalProperties: false
+          required:
+            - address
+            - city
+            - state
+            - zipcode
+        usage: 'Usage: /compsheet new --address "123 Main St" --city Austin --state TX --zipcode 78701'
+      - name: list
+        description: List stored compsheets
+        argv:
+          - compsheet
+          - list
+        input_schema:
+          type: object
+          properties: {}
+          additionalProperties: false
+        usage: "Usage: /compsheet list"
+      - name: add
+        description: Add a sold property to a compsheet
+        argv:
+          - compsheet
+          - add
+        input_schema:
+          type: object
+          properties:
+            name:
+              type: string
+            address:
+              type: string
+            city:
+              type: string
+            state:
+              type: string
+            zipcode:
+              type: string
+          additionalProperties: false
+          required:
+            - name
+            - address
+            - city
+            - state
+            - zipcode
+        usage: 'Usage: /compsheet add --name "stored-name" --address "123 Main St" --city Austin --state TX --zipcode 78701'
+      - name: dump
+        description: Dump properties from a compsheet
+        argv:
+          - compsheet
+          - dump
+        input_schema:
+          type: object
+          properties:
+            name:
+              type: string
+            full:
+              type: boolean
+          additionalProperties: false
+          required:
+            - name
+        usage: 'Usage: /compsheet dump --name "stored-name" --full false'
+      - name: report
+        description: Report summary metrics for a compsheet
+        argv:
+          - compsheet
+          - report
+        input_schema:
+          type: object
+          properties:
+            name:
+              type: string
+            metrics:
+              type: string
+          additionalProperties: false
+          required:
+            - name
+        usage: 'Usage: /compsheet report --name "stored-name" --metrics all'
+      - name: offer
+        description: Update or inspect offer details for a compsheet
+        argv:
+          - compsheet
+          - offer
+        input_schema:
+          type: object
+          properties:
+            name:
+              type: string
+            offer_price:
+              type: number
+            down_payment:
+              type: number
+            interest_rate:
+              type: number
+            annual_taxes:
+              type: number
+            annual_home_insurance:
+              type: number
+            other_monthly_costs:
+              type: number
+          additionalProperties: false
+          required:
+            - name
+        usage: 'Usage: /compsheet offer --name "stored-name" --offer_price 450000 --down_payment 20 --interest_rate 6.5 --annual_taxes 7200 --annual_home_insurance 1800 --other_monthly_costs 250'
+      - name: remove
+        description: Remove a property from a compsheet by property_id
+        argv:
+          - compsheet
+          - remove
+        input_schema:
+          type: object
+          properties:
+            name:
+              type: string
+            property_id:
+              type: string
+          additionalProperties: false
+          required:
+            - name
+            - property_id
+        usage: 'Usage: /compsheet remove --name "stored-name" --property_id 123'
+      - name: delete
+        description: Delete a compsheet
+        argv:
+          - compsheet
+          - delete
+        input_schema:
+          type: object
+          properties:
+            name:
+              type: string
+          additionalProperties: false
+          required:
+            - name
+        usage: 'Usage: /compsheet delete --name "stored-name"'

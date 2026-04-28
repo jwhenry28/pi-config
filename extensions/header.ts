@@ -13,6 +13,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import type { ModuleContents } from "./modules/registry.js";
 import { formatModulesBlock } from "./modules/display.js";
+import { getCwd } from "./shared/cwd.js";
 
 export default function (pi: ExtensionAPI) {
   pi.registerMessageRenderer("startup-modules", (message, _options, theme) => {
@@ -33,6 +34,8 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     if (!ctx.hasUI) return;
 
+    const cwd = getCwd(ctx);
+
     // Only show on fresh sessions — resumed sessions already have
     // the startup-modules message persisted from the original start.
     const hasModulesMessage = ctx.sessionManager.getBranch().some(
@@ -40,29 +43,47 @@ export default function (pi: ExtensionAPI) {
     );
     if (hasModulesMessage) return;
 
-    let shown: string[] = [];
-    let modules: Map<string, ModuleContents> = new Map();
+    const sendStartupModules = () => {
+      let shown: string[] = [];
+      let modules: Map<string, ModuleContents> = new Map();
 
-    pi.events.emit("module:get-state", {
-      callback: (info: { shown: string[]; modules: Map<string, ModuleContents> }) => {
-        shown = info.shown;
-        modules = info.modules;
-      },
-    });
+      pi.events.emit("module:get-state", {
+        // The header can run before the modules extension's own session_start
+        // handler. Pass the session cwd so the modules extension can hydrate
+        // skill-backed modules before answering this startup query.
+        cwd,
+        callback: (info: { shown: string[]; modules: Map<string, ModuleContents> }) => {
+          shown = info.shown;
+          modules = info.modules;
+        },
+      });
 
-    const names = Array.from(modules.keys()).sort();
-    if (names.length === 0) return;
+      const names = Array.from(modules.keys()).sort();
+      if (names.length === 0) return;
 
-    const moduleList = names.map((name) => ({
-      name,
-      shown: shown.includes(name),
-    }));
+      const moduleList = names.map((name) => ({
+        name,
+        shown: shown.includes(name),
+      }));
 
-    pi.sendMessage({
-      customType: "startup-modules",
-      content: "",
-      display: true,
-      details: { modules: moduleList },
-    });
+      pi.sendMessage({
+        customType: "startup-modules",
+        content: "",
+        display: true,
+        details: { modules: moduleList },
+      });
+    };
+
+    // Defer until after pi has rendered the built-in startup resource block
+    // ([Skills], [Extensions], etc.), so [Modules] appears at the bottom of
+    // that header rather than before it.
+    setTimeout(() => {
+      try {
+        sendStartupModules();
+      } catch {
+        // The deferred render can outlive short-lived test/reload sessions.
+        // If the extension context has gone stale, just skip the startup block.
+      }
+    }, 0);
   });
 }
