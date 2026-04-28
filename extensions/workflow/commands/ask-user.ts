@@ -1,7 +1,7 @@
 import { registerStepCommand } from "./registry.js";
 import { writeKey } from "../../memory/store.js";
 import { getCwd } from "../../shared/cwd.js";
-import { QnAComponent, type QnAQuestion } from "../../shared/qna-component.js";
+import { QnAComponent, type QnAQuestion } from "../../shared/qna/component.js";
 
 registerStepCommand("ask-user", async (commandCtx, args) => {
 	if (!args || Object.keys(args).length === 0) {

@@ -53,4 +53,6 @@ For each violation found:
 If you find no violations in a category, say so explicitly.
 
 After presenting all findings, ask the user which violations they want
-you to fix. Do NOT make any changes until the user responds.
+you to fix using `ask_user` with the `checklist` question type. Include each
+violation as a separate checklist option so the user can easily select exactly
+which issues to address. Do NOT make any changes until the user responds.

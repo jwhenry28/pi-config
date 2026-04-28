@@ -21,7 +21,7 @@ import type {
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 import { BorderedLoader } from "@mariozechner/pi-coding-agent";
-import { QnAComponent, formatAnswers, type QnAQuestion } from "./shared/qna-component.js";
+import { QnAComponent, formatAnswers, type QnAQuestion } from "./shared/qna/component.js";
 
 // Structured output format for question extraction
 interface ExtractionResult {
