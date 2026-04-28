@@ -10,9 +10,10 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
+import { StringEnum } from "@mariozechner/pi-ai";
 import { Type } from "typebox";
 import { moduleTag } from "./modules/api.js";
-import { QnAComponent, type QnAQuestion } from "./shared/qna-component.js";
+import { QnAComponent, type QnAQuestion } from "./shared/qna/component.js";
 
 /** Maximum length (in characters) for a single question's text. Questions
  *  exceeding this limit are rejected so the model learns to present lengthy
@@ -93,9 +94,10 @@ export default function (pi: ExtensionAPI) {
       name: "ask_user",
       label: "Ask User",
       description:
-        "Ask the user questions and wait for their answers. Supports free-text input or multiple-choice selection. When you have multiple questions, pass them all at once. Each question must be concise (max 1024 chars) — if you need to present analysis or context, write it as a normal assistant message first, then call this tool with only the questions.",
+        "Ask the user questions and wait for their answers. Supports free-text input, single-choice selection, or checklist selection where the user may choose zero, one, many, or all options. When you have multiple questions, pass them all at once. Each question must be concise (max 1024 chars) — if you need to present analysis or context, write it as a normal assistant message first, then call this tool with only the questions.",
       promptGuidelines: [
         "Use ask_user for ALL questions directed at the user — clarifications, multiple-choice selections, design decisions, yes/no confirmations. Batch related questions into a single call using the `questions` array. This gives the user a proper input prompt.",
+        "Use `type: \"checklist\"` with `options` when the user may choose zero, one, multiple, or all options. Use `type: \"select\"` with `options` when the user should choose exactly one option. Omit `type` for backwards-compatible free-text or single-select behavior.",
         "The ONE exception: when presenting large content blocks (design sections, plans, documents) for review, write those as normal text and let the user respond naturally. Don't funnel \"here's a 300-word design section, does this look right?\" through ask_user.",
         "When you have multiple questions, pass them ALL in the `questions` array in a single tool call rather than making separate calls.",
         "Keep each question concise. If you have context or analysis to share (e.g. what you found in the codebase, trade-offs between approaches), write that as a normal assistant message FIRST, then call ask_user with just the questions. The tool will reject questions longer than 1024 characters.",
@@ -104,10 +106,16 @@ export default function (pi: ExtensionAPI) {
         questions: Type.Array(
           Type.Object({
             question: Type.String({ description: "The question to ask" }),
+            type: Type.Optional(
+              StringEnum(["text", "select", "checklist"] as const, {
+                description:
+                  "Question type. Use text for free-form answers, select for exactly one option, and checklist when the user may choose zero, one, multiple, or all options. If omitted, options imply select and no options imply text.",
+              }),
+            ),
             options: Type.Optional(
               Type.Array(Type.String(), {
                 description:
-                  'If provided, show as multiple-choice options instead of free-text input. Note - the user will always get one "Something else?" free-form option.',
+                  "Options for select or checklist questions. Select questions include a Something else free-form option. Checklist questions do not include Something else and allow zero or more selections.",
               }),
             ),
           }),
@@ -147,6 +155,7 @@ export default function (pi: ExtensionAPI) {
 
         const questions: QnAQuestion[] = params.questions.map((q) => ({
           question: q.question,
+          type: q.type,
           options: q.options && q.options.length > 0 ? q.options : undefined,
         }));
 
