@@ -248,7 +248,14 @@ async function applyStepModel(
   }
 
   try {
-    await pi.setModel(model);
+    const selected = await pi.setModel(model);
+    if (!selected) {
+      ctx.ui.notify(
+        `[Workflow] Failed to set model "${step.model}" (resolved to "${resolvedModelRef}"): no API key configured for ${model.provider}/${model.id}`,
+        "error",
+      );
+      return false;
+    }
   } catch (e) {
     ctx.ui.notify(
       `[Workflow] Failed to set model: ${(e as Error).message}`,

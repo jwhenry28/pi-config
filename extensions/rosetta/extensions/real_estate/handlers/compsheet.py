@@ -1,0 +1,436 @@
+import json
+from typing import Any, Dict, Optional
+
+from utils.compsheet import (
+    CompsheetNotFoundError,
+    DuplicatePropertyError,
+    InvalidCompsheetHeaderError,
+    InvalidCompsheetNameError,
+    InvalidTargetSummaryError,
+    PropertyNotFoundInCompsheetError,
+    TargetSummaryNotFoundError,
+    append_property_summary,
+    build_compsheet_path,
+    create_compsheet_with_target,
+    delete_compsheet_directory,
+    list_compsheet_names,
+    normalize_compsheet_name,
+    read_compsheet_rows,
+    read_target_summary,
+    remove_property_rows,
+)
+from utils.compsheet_map import MapReportError
+from utils.compsheet_offer import InvalidOfferFileError, update_or_inspect_offer
+from utils.compsheet_report import build_compsheet_report, is_supported_metrics_selector
+from utils.parsing import JsonInputError, parse_json_input, print_compsheet_new_result, print_error
+from utils.realtor_api import (
+    MalformedApiResponseError,
+    NoPropertyFoundError,
+    RealtorApiError,
+    extract_first_property_summary,
+    query_realtor_api,
+)
+
+
+def handle_compsheet_new_command(raw_input: str) -> None:
+    tool_input = parse_json_input(raw_input)
+    if isinstance(tool_input, JsonInputError):
+        print_error(tool_input.message)
+        return
+
+    validation_error = validate_compsheet_new_input(tool_input)
+    if validation_error is not None:
+        print_error(validation_error)
+        return
+
+    normalized_name = normalize_compsheet_name(tool_input["address"])
+
+    try:
+        compsheet_path = build_compsheet_path(normalized_name)
+        if compsheet_path.exists():
+            print_error(f"Compsheet already exists: {compsheet_path}")
+            return
+
+        target_summary = fetch_target_property_summary(tool_input)
+        compsheet_path, target_path = create_compsheet_with_target(normalized_name, target_summary)
+    except RealtorApiError as error:
+        error_detail = str(error).strip()
+        message = f"Failed to query realtor.com API: {error_detail}" if error_detail else "Failed to query realtor.com API"
+        print_error(message)
+        return
+    except MalformedApiResponseError:
+        print_error("Malformed API response from realtor.com")
+        return
+    except NoPropertyFoundError:
+        print_error("No property found for the provided address")
+        return
+    except InvalidCompsheetNameError:
+        print_error("Invalid compsheet name")
+        return
+    except FileExistsError:
+        print_error(f"Compsheet already exists: {build_compsheet_path(normalized_name)}")
+        return
+    except OSError as error:
+        print_error(f"Failed to create compsheet: {error}")
+        return
+
+    print_compsheet_new_result(normalized_name, str(compsheet_path), str(target_path), target_summary)
+
+
+def handle_compsheet_list_command(raw_input: str) -> None:
+    tool_input = parse_json_input(raw_input)
+    if isinstance(tool_input, JsonInputError):
+        print_error(tool_input.message)
+        return
+
+    try:
+        compsheet_names = list_compsheet_names()
+    except OSError as error:
+        print_error(f"Failed to list compsheets: {error}")
+        return
+
+    print_result({"names": compsheet_names})
+
+
+def handle_compsheet_add_command(raw_input: str) -> None:
+    tool_input = parse_json_input(raw_input)
+    if isinstance(tool_input, JsonInputError):
+        print_error(tool_input.message)
+        return
+
+    validation_error = validate_compsheet_add_input(tool_input)
+    if validation_error is not None:
+        print_error(validation_error)
+        return
+
+    name = tool_input["name"].strip()
+    try:
+        property_summary = fetch_sold_property_summary(tool_input)
+        require_property_id(property_summary)
+        append_property_summary(name, property_summary)
+    except RealtorApiError as error:
+        error_detail = str(error).strip()
+        message = f"Failed to query realtor.com API: {error_detail}" if error_detail else "Failed to query realtor.com API"
+        print_error(message)
+        return
+    except MalformedApiResponseError:
+        print_error("Malformed API response from realtor.com")
+        return
+    except NoPropertyFoundError:
+        print_error("No property found for the provided address")
+        return
+    except MissingPropertyIdError:
+        print_error("property_id is required")
+        return
+    except InvalidCompsheetNameError:
+        print_error("Invalid compsheet name")
+        return
+    except CompsheetNotFoundError as error:
+        print_error(f"Compsheet not found: {error.stored_name}")
+        return
+    except InvalidCompsheetHeaderError as error:
+        print_error(f"Compsheet has invalid header: {error.compsheet_path}")
+        return
+    except DuplicatePropertyError as error:
+        print_error(f"Property already exists in compsheet: {error.property_id}")
+        return
+    except OSError as error:
+        print_error(f"Failed to update compsheet: {error}")
+        return
+
+    print_result({"name": name, "property": property_summary})
+
+
+def handle_compsheet_dump_command(raw_input: str) -> None:
+    tool_input = parse_json_input(raw_input)
+    if isinstance(tool_input, JsonInputError):
+        print_error(tool_input.message)
+        return
+
+    validation_error = validate_compsheet_dump_input(tool_input)
+    if validation_error is not None:
+        print_error(validation_error)
+        return
+
+    name = tool_input["name"].strip()
+    try:
+        rows = read_compsheet_rows(name)
+    except InvalidCompsheetNameError:
+        print_error("Invalid compsheet name")
+        return
+    except CompsheetNotFoundError as error:
+        print_error(f"Compsheet not found: {error.stored_name}")
+        return
+    except InvalidCompsheetHeaderError as error:
+        print_error(f"Compsheet has invalid header: {error.compsheet_path}")
+        return
+    except OSError as error:
+        print_error(f"Failed to read compsheet: {error}")
+        return
+
+    properties = rows if tool_input.get("full") is True else summarize_compsheet_rows(rows)
+    print_result({"name": name, "properties": properties})
+
+
+def handle_compsheet_report_command(raw_input: str) -> None:
+    tool_input = parse_json_input(raw_input)
+    if isinstance(tool_input, JsonInputError):
+        print_error(tool_input.message)
+        return
+
+    validation_error = validate_compsheet_report_input(tool_input)
+    if validation_error is not None:
+        print_error(validation_error)
+        return
+
+    name = tool_input["name"].strip()
+    metrics_selector = tool_input.get("metrics", "all")
+    try:
+        rows = read_compsheet_rows(name)
+    except InvalidCompsheetNameError:
+        print_error("Invalid compsheet name")
+        return
+    except CompsheetNotFoundError as error:
+        print_error(f"Compsheet not found: {error.stored_name}")
+        return
+    except InvalidCompsheetHeaderError as error:
+        print_error(f"Compsheet has invalid header: {error.compsheet_path}")
+        return
+    except OSError as error:
+        print_error(f"Failed to read compsheet: {error}")
+        return
+
+    try:
+        target_summary = read_target_summary(name)
+    except InvalidCompsheetNameError:
+        print_error("Invalid compsheet name")
+        return
+    except TargetSummaryNotFoundError as error:
+        print_error(f"Target property not found for compsheet: {error.stored_name}")
+        return
+    except InvalidTargetSummaryError as error:
+        print_error(f"Invalid target property file: {error.target_path}")
+        return
+    except OSError as error:
+        print_error(f"Failed to read target property: {error}")
+        return
+
+    try:
+        metrics_report = build_compsheet_report(rows, metrics_selector, target_summary, name)
+    except MapReportError as error:
+        print_error(str(error))
+        return
+
+    print_result({"name": name, "metrics": metrics_report})
+
+
+def handle_compsheet_remove_command(raw_input: str) -> None:
+    tool_input = parse_json_input(raw_input)
+    if isinstance(tool_input, JsonInputError):
+        print_error(tool_input.message)
+        return
+
+    validation_error = validate_compsheet_remove_input(tool_input)
+    if validation_error is not None:
+        print_error(validation_error)
+        return
+
+    name = tool_input["name"].strip()
+    property_id = tool_input["property_id"].strip()
+    try:
+        removed_count = remove_property_rows(name, property_id)
+    except InvalidCompsheetNameError:
+        print_error("Invalid compsheet name")
+        return
+    except CompsheetNotFoundError as error:
+        print_error(f"Compsheet not found: {error.stored_name}")
+        return
+    except InvalidCompsheetHeaderError as error:
+        print_error(f"Compsheet has invalid header: {error.compsheet_path}")
+        return
+    except PropertyNotFoundInCompsheetError as error:
+        print_error(f"Property not found in compsheet: {error.property_id}")
+        return
+    except OSError as error:
+        print_error(f"Failed to update compsheet: {error}")
+        return
+
+    print_result({"name": name, "property_id": property_id, "removed": removed_count})
+
+
+def handle_compsheet_offer_command(raw_input: str) -> None:
+    tool_input = parse_json_input(raw_input)
+    if isinstance(tool_input, JsonInputError):
+        print_error(tool_input.message)
+        return
+
+    name_error = validate_required_string(tool_input, "name")
+    if name_error is not None:
+        print_error(name_error)
+        return
+
+    name = tool_input["name"].strip()
+    try:
+        offer_result = update_or_inspect_offer(name, tool_input)
+    except ValueError as error:
+        print_error(str(error))
+        return
+    except InvalidCompsheetNameError:
+        print_error("Invalid compsheet name")
+        return
+    except CompsheetNotFoundError as error:
+        print_error(f"Compsheet not found: {error.stored_name}")
+        return
+    except InvalidOfferFileError as error:
+        print_error(f"Invalid offer file: {error.offer_path}")
+        return
+    except OSError as error:
+        if "offer" in str(error).lower():
+            print_error(f"Failed to update offer: {error}")
+        else:
+            print_error(f"Failed to read offer: {error}")
+        return
+
+    print_result(offer_result)
+
+
+def handle_compsheet_delete_command(raw_input: str) -> None:
+    tool_input = parse_json_input(raw_input)
+    if isinstance(tool_input, JsonInputError):
+        print_error(tool_input.message)
+        return
+
+    validation_error = validate_compsheet_delete_input(tool_input)
+    if validation_error is not None:
+        print_error(validation_error)
+        return
+
+    name = tool_input["name"].strip()
+    try:
+        delete_compsheet_directory(name)
+    except InvalidCompsheetNameError:
+        print_error("Invalid compsheet name")
+        return
+    except CompsheetNotFoundError as error:
+        print_error(f"Compsheet not found: {error.stored_name}")
+        return
+    except OSError as error:
+        print_error(f"Failed to delete compsheet: {error}")
+        return
+
+    print_result({"name": name, "deleted": True})
+
+
+def validate_compsheet_new_input(tool_input: Dict[str, Any]) -> Optional[str]:
+    for field_name in ("address", "city", "state", "zipcode"):
+        field_error = validate_required_string(tool_input, field_name)
+        if field_error is not None:
+            return field_error
+
+    return None
+
+
+def validate_compsheet_add_input(tool_input: Dict[str, Any]) -> Optional[str]:
+    name_error = validate_required_string(tool_input, "name")
+    if name_error is not None:
+        return name_error
+
+    for field_name in ("address", "city", "state", "zipcode"):
+        field_error = validate_required_string(tool_input, field_name)
+        if field_error is not None:
+            return field_error
+
+    return None
+
+
+def validate_compsheet_dump_input(tool_input: Dict[str, Any]) -> Optional[str]:
+    name_error = validate_required_string(tool_input, "name")
+    if name_error is not None:
+        return name_error
+
+    full = tool_input.get("full")
+    if full is not None and not isinstance(full, bool):
+        return "full must be a boolean"
+
+    return None
+
+
+def validate_compsheet_report_input(tool_input: Dict[str, Any]) -> Optional[str]:
+    name_error = validate_required_string(tool_input, "name")
+    if name_error is not None:
+        return name_error
+
+    metrics_selector = tool_input.get("metrics", "all")
+    if not isinstance(metrics_selector, str):
+        return "metrics must be a string"
+
+    if not is_supported_metrics_selector(metrics_selector):
+        return f"Unsupported metrics value: {metrics_selector}"
+
+    return None
+
+
+def validate_compsheet_remove_input(tool_input: Dict[str, Any]) -> Optional[str]:
+    name_error = validate_required_string(tool_input, "name")
+    if name_error is not None:
+        return name_error
+
+    return validate_required_string(tool_input, "property_id")
+
+
+def validate_compsheet_delete_input(tool_input: Dict[str, Any]) -> Optional[str]:
+    return validate_required_string(tool_input, "name")
+
+
+def validate_required_string(tool_input: Dict[str, Any], field_name: str) -> Optional[str]:
+    value = tool_input.get(field_name)
+    if not isinstance(value, str) or not value.strip():
+        return f"{field_name} is required"
+
+    return None
+
+
+def fetch_sold_property_summary(tool_input: Dict[str, Any]) -> Dict[str, Any]:
+    response_json = query_realtor_api(
+        tool_input["address"].strip(),
+        tool_input["city"].strip(),
+        tool_input["state"].strip(),
+        tool_input["zipcode"].strip(),
+        "sold",
+    )
+    return extract_first_property_summary(response_json)
+
+
+def fetch_target_property_summary(tool_input: Dict[str, Any]) -> Dict[str, Any]:
+    response_json = query_realtor_api(
+        tool_input["address"].strip(),
+        tool_input["city"].strip(),
+        tool_input["state"].strip(),
+        tool_input["zipcode"].strip(),
+        "for_sale",
+    )
+    return extract_first_property_summary(response_json)
+
+
+def require_property_id(property_summary: Dict[str, Any]) -> None:
+    property_id = property_summary.get("property_id")
+    if property_id is None or not str(property_id).strip():
+        raise MissingPropertyIdError()
+
+
+def summarize_compsheet_rows(rows: list[Dict[str, str]]) -> list[Dict[str, str]]:
+    return [
+        {
+            "property_id": row.get("property_id", ""),
+            "address": row.get("address", ""),
+        }
+        for row in rows
+    ]
+
+
+def print_result(result: Dict[str, Any]) -> None:
+    print(json.dumps({"result": result}))
+
+
+class MissingPropertyIdError(Exception):
+    pass

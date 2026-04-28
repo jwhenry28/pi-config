@@ -7,6 +7,7 @@
   },
   "devDependencies": {
     "@mariozechner/pi-coding-agent": "*",
+    "@types/shell-quote": "^1.7.5",
     "@types/turndown": "^5.0.6",
     "vitest": "^3.0.0"
   },
@@ -14,6 +15,7 @@
     "@mozilla/readability": "^0.6.0",
     "cheerio": "^1.2.0",
     "jsdom": "^28.1.0",
+    "shell-quote": "^1.8.3",
     "turndown": "^7.2.2",
     "yaml": "^2.7.1"
   }
