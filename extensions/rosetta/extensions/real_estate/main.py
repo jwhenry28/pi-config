@@ -8,6 +8,7 @@ from handlers.compsheet import (
     handle_compsheet_dump_command,
     handle_compsheet_list_command,
     handle_compsheet_new_command,
+    handle_compsheet_offer_command,
     handle_compsheet_remove_command,
     handle_compsheet_report_command,
 )
@@ -52,6 +53,7 @@ def add_compsheet_subcommands(compsheet_subparsers: argparse._SubParsersAction) 
     add_json_subcommand(compsheet_subparsers, "add", "Add a sold property to a compsheet", handle_compsheet_add_command)
     add_json_subcommand(compsheet_subparsers, "dump", "Dump compsheet rows", handle_compsheet_dump_command)
     add_json_subcommand(compsheet_subparsers, "report", "Report summary metrics for a compsheet", handle_compsheet_report_command)
+    add_json_subcommand(compsheet_subparsers, "offer", "Update or inspect offer details for a compsheet", handle_compsheet_offer_command)
     add_json_subcommand(compsheet_subparsers, "remove", "Remove a property from a compsheet", handle_compsheet_remove_command)
     add_json_subcommand(compsheet_subparsers, "delete", "Delete a compsheet", handle_compsheet_delete_command)
 

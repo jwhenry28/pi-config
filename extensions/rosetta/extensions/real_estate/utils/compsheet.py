@@ -10,6 +10,7 @@ COMPSHEET_FILENAME = "compsheet.csv"
 TARGET_FILENAME = "target.json"
 COMPSHEET_HEADER = [
     "property_id",
+    "href",
     "list_price",
     "listing_id",
     "status",

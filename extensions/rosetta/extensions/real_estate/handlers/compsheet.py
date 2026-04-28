@@ -20,6 +20,7 @@ from utils.compsheet import (
     remove_property_rows,
 )
 from utils.compsheet_map import MapReportError
+from utils.compsheet_offer import InvalidOfferFileError, update_or_inspect_offer
 from utils.compsheet_report import build_compsheet_report, is_supported_metrics_selector
 from utils.parsing import JsonInputError, parse_json_input, print_compsheet_new_result, print_error
 from utils.realtor_api import (
@@ -255,6 +256,42 @@ def handle_compsheet_remove_command(raw_input: str) -> None:
         return
 
     print_result({"name": name, "property_id": property_id, "removed": removed_count})
+
+
+def handle_compsheet_offer_command(raw_input: str) -> None:
+    tool_input = parse_json_input(raw_input)
+    if isinstance(tool_input, JsonInputError):
+        print_error(tool_input.message)
+        return
+
+    name_error = validate_required_string(tool_input, "name")
+    if name_error is not None:
+        print_error(name_error)
+        return
+
+    name = tool_input["name"].strip()
+    try:
+        offer_result = update_or_inspect_offer(name, tool_input)
+    except ValueError as error:
+        print_error(str(error))
+        return
+    except InvalidCompsheetNameError:
+        print_error("Invalid compsheet name")
+        return
+    except CompsheetNotFoundError as error:
+        print_error(f"Compsheet not found: {error.stored_name}")
+        return
+    except InvalidOfferFileError as error:
+        print_error(f"Invalid offer file: {error.offer_path}")
+        return
+    except OSError as error:
+        if "offer" in str(error).lower():
+            print_error(f"Failed to update offer: {error}")
+        else:
+            print_error(f"Failed to read offer: {error}")
+        return
+
+    print_result(offer_result)
 
 
 def handle_compsheet_delete_command(raw_input: str) -> None:

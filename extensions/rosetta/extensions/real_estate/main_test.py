@@ -86,6 +86,7 @@ class RealEstateMainTest(unittest.TestCase):
     def test_sold_graphql_payload_omits_unused_parameters(self):
         payload = realtor_api.build_graphql_payload("123 Main St", "Austin", "TX", "78701", "sold")
 
+        self.assertIn("property_id\n      href\n      list_price", payload["query"])
         self.assertIn("address {\n          line\n          postal_code\n          state\n          state_code\n          city\n          coordinate {", payload["query"])
         self.assertNotIn("location {\n        coordinate", payload["query"])
         self.assertNotIn("photosLimit", payload["variables"])
@@ -99,9 +100,10 @@ class RealEstateMainTest(unittest.TestCase):
         self.assertNotIn("sort: $sort", payload["query"])
         self.assertNotIn("$mortgage_params", payload["query"])
 
-    def test_summarize_property_extracts_coordinate_fields(self):
+    def test_summarize_property_extracts_coordinate_fields_and_href(self):
         property_data = {
             "property_id": "prop-1",
+            "href": "https://www.realtor.com/realestateandhomes-detail/example",
             "location": {
                 "address": {
                     "line": "123 Main St",
@@ -116,6 +118,7 @@ class RealEstateMainTest(unittest.TestCase):
 
         self.assertEqual(summary["latitude"], 30.2672)
         self.assertEqual(summary["longitude"], -97.7431)
+        self.assertEqual(summary["href"], "https://www.realtor.com/realestateandhomes-detail/example")
 
     def test_summarize_property_accepts_alternate_coordinate_keys(self):
         property_data = {
@@ -343,10 +346,11 @@ class RealEstateMainTest(unittest.TestCase):
         extract_mock.assert_called_once_with({"api": "response"})
         self.assertEqual(rows, [property_summary])
 
-    def test_compsheet_add_persists_coordinate_columns(self):
+    def test_compsheet_add_persists_coordinate_and_href_columns(self):
         property_summary = self.sample_property_summary("prop-1")
         property_summary["latitude"] = "30.2672"
         property_summary["longitude"] = "-97.7431"
+        property_summary["href"] = "https://www.realtor.com/realestateandhomes-detail/example-comp"
         with tempfile.TemporaryDirectory() as home_dir, patch.dict(os.environ, {"HOME": home_dir}):
             root = Path(home_dir) / ".pi" / "rosetta" / "real_estate" / "compsheets"
             compsheet_path = root / "sheet" / "compsheet.csv"
@@ -364,13 +368,16 @@ class RealEstateMainTest(unittest.TestCase):
 
         self.assertIn("latitude", compsheet.COMPSHEET_HEADER)
         self.assertIn("longitude", compsheet.COMPSHEET_HEADER)
+        self.assertIn("href", compsheet.COMPSHEET_HEADER)
         self.assertEqual(csv_rows[0]["latitude"], "30.2672")
         self.assertEqual(csv_rows[0]["longitude"], "-97.7431")
+        self.assertEqual(csv_rows[0]["href"], "https://www.realtor.com/realestateandhomes-detail/example-comp")
 
-    def test_compsheet_new_persists_target_coordinates(self):
+    def test_compsheet_new_persists_target_coordinates_and_href(self):
         target_summary = self.sample_property_summary("target-1")
         target_summary["latitude"] = 30.2672
         target_summary["longitude"] = -97.7431
+        target_summary["href"] = "https://www.realtor.com/realestateandhomes-detail/example-target"
         with tempfile.TemporaryDirectory() as home_dir, patch.dict(os.environ, {"HOME": home_dir}):
             with patch.object(handle_compsheet, "query_realtor_api", return_value={}), \
                  patch.object(handle_compsheet, "extract_first_property_summary", return_value=target_summary):
@@ -384,6 +391,7 @@ class RealEstateMainTest(unittest.TestCase):
 
         self.assertEqual(stored_target["latitude"], 30.2672)
         self.assertEqual(stored_target["longitude"], -97.7431)
+        self.assertEqual(stored_target["href"], "https://www.realtor.com/realestateandhomes-detail/example-target")
 
     def test_compsheet_add_requires_non_empty_property_id(self):
         property_summary = self.sample_property_summary("")
@@ -839,7 +847,7 @@ class RealEstateMainTest(unittest.TestCase):
         self.write_target_summary(compsheet_path.with_name("target.json"), target_summary)
 
     def write_target_summary(self, target_path, target_summary=None):
-        target_path.write_text(json.dumps(target_summary or {"sqft": "1800", "list_price": "400000", "latitude": "30.2672", "longitude": "-97.7431"}))
+        target_path.write_text(json.dumps(target_summary or {"sqft": "1800", "list_price": "400000", "latitude": "30.2672", "longitude": "-97.7431", "href": "href-value"}))
 
     def read_compsheet_rows(self, compsheet_path):
         with compsheet_path.open(newline="") as csv_file:
