@@ -4,7 +4,7 @@ import { createComponentTest, type ComponentTestSession } from "../../testutils/
 import { writeWorkflow, writeTodo, writeFile } from "../../testutils/component/index.js";
 import { registerMockModel, runWorkflow, installConditionOverride, parseWorkflowId } from "./helpers.js";
 import { setConditionStreamFnOverride } from "../evaluator.js";
-import { computeEffectiveModules } from "../runner.js";
+import { applyStepModules, computeEffectiveModules } from "../runner.js";
 import { resolveModelAlias } from "../models.js";
 
 describe("workflow extension (component)", () => {
@@ -592,6 +592,47 @@ This is FAKE_SKILL_CONTENT_FOR_TESTING.
       const effective = computeEffectiveModules(config, step);
       expect(effective).toEqual(expect.arrayContaining(["memory", "dev", "agent-todo"]));
       expect(effective).toHaveLength(3);
+    });
+
+    it("accepts scalar module names", () => {
+      const config = { name: "test", modules: "memory", steps: [] as any[] } as any;
+      const step = { name: "s", model: "m", prompt: "p", modules: "ask", maxExecutions: 10 } as any;
+      expect(computeEffectiveModules(config, step)).toEqual(["memory", "ask"]);
+    });
+
+    it("applies step modules by temporarily filtering active tools without persisting module state", () => {
+      const emitted: string[] = [];
+      const activeTools: string[][] = [];
+      const pi = {
+        getAllTools: () => [
+          { name: "ask_user" },
+          { name: "web_search" },
+          { name: "untagged" },
+        ],
+        setActiveTools: (names: string[]) => activeTools.push(names),
+        events: {
+          emit: (event: string, data: any) => {
+            emitted.push(event);
+            if (event === "module:get-state") {
+              data.callback({
+                shown: ["web"],
+                modules: new Map([
+                  ["ask", { skills: [], tools: ["ask_user"] }],
+                  ["web", { skills: [], tools: ["web_search"] }],
+                ]),
+              });
+            }
+          },
+        },
+      } as any;
+
+      const config = { name: "test", steps: [] as any[] };
+      const step = { name: "s", model: "m", prompt: "p", modules: "ask", maxExecutions: 10 } as any;
+
+      applyStepModules(pi, config, step);
+
+      expect(activeTools).toEqual([["ask_user", "untagged"]]);
+      expect(emitted).not.toContain("module:set");
     });
 
     it("returns empty when no modules specified", () => {

@@ -23,7 +23,7 @@ describe("updateStatus", () => {
       savedCommandCtx: null,
       originalModelId: null,
       originalThinkingLevel: null,
-      originalModules: null,
+      originalActiveTools: null,
       pendingConditionIndex: null,
       errorPaused: false,
     };

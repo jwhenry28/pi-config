@@ -13,7 +13,8 @@ import {
 	advanceToNextStep,
 	restoreOriginalModel,
 	restoreOriginalThinkingLevel,
-	restoreOriginalModules,
+	restoreOriginalActiveTools,
+	captureActiveTools,
 	filterToCurrentStep,
 	buildModuleSkillsBlock,
 	handlePostStep,
@@ -41,7 +42,7 @@ export default function workflowExtension(pi: ExtensionAPI) {
 		savedCommandCtx: null,
 		originalModelId: null,
 		originalThinkingLevel: null,
-		originalModules: null,
+		originalActiveTools: null,
 		pendingConditionIndex: null,
 		errorPaused: false,
 	};
@@ -195,7 +196,7 @@ async function handleWorkflowAbort(
 	state.active = null;
 	state.errorPaused = false;
 	updateStatus(state, ctx);
-	await restoreOriginalModules(pi, state);
+	await restoreOriginalActiveTools(pi, state);
 	restoreOriginalThinkingLevel(pi, state);
 	await restoreOriginalModel(pi, state, ctx);
 	ctx.ui.notify(`Workflow "${workflowName}" ${reason}`, level);
@@ -222,7 +223,7 @@ async function handleWorkflowStart(
 		return;
 	}
 
-	const { knownModules, currentShownModules } = getModuleState(pi);
+	const { knownModules } = getModuleState(pi);
 	const validationError = validate(config, state.cwd, state.allSkills, ctx, knownModules);
 	if (validationError) {
 		ctx.ui.notify(validationError, "error");
@@ -231,7 +232,7 @@ async function handleWorkflowStart(
 
 	state.originalModelId = ctx.model?.id ?? null;
 	state.originalThinkingLevel = pi.getThinkingLevel();
-	state.originalModules = currentShownModules;
+	state.originalActiveTools = captureActiveTools(pi);
 	const workflowId = randomUUID();
 	state.active = { id: workflowId, config, currentStepIndex: 0, executionCounts: {} };
 	createMemoryDomain(state.cwd, workflowId);
@@ -248,18 +249,16 @@ function parseWorkflowStartArgs(trimmedArgs: string): { workflowName: string; us
 	return { workflowName, userPrompt };
 }
 
-function getModuleState(pi: ExtensionAPI): { knownModules: Set<string> | undefined; currentShownModules: string[] } {
+function getModuleState(pi: ExtensionAPI): { knownModules: Set<string> | undefined } {
 	let knownModules: Set<string> | undefined;
-	let currentShownModules: string[] = [];
 
 	pi.events.emit("module:get-state", {
 		callback: (info: { shown: string[]; modules: Map<string, unknown> }) => {
 			knownModules = new Set(info.modules.keys());
-			currentShownModules = info.shown;
 		},
 	});
 
-	return { knownModules, currentShownModules };
+	return { knownModules };
 }
 
 function registerEvaluateConditionCommand(pi: ExtensionAPI, state: WorkflowState): void {

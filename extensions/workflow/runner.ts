@@ -32,6 +32,8 @@ import {
 } from "./plugin-skills.js";
 import { createDiagnostics, completeDiagnostics, recordStepUsage, type TokenUsage } from "./diagnostics.js";
 import { createMemoryDomain, getWorkflowPrompt } from "./prompt-memory.js";
+import { computeActiveTools } from "../modules/state.js";
+import type { ModuleContents } from "../modules/registry.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const messageTemplate = readFileSync(
@@ -65,9 +67,20 @@ export function computeEffectiveModules(
   config: WorkflowConfig,
   step: PromptStep,
 ): string[] {
-  const workflowModules = config.modules ?? [];
-  const stepModules = step.modules ?? [];
+  const workflowModules = normalizeModules(config.modules);
+  const stepModules = normalizeModules(step.modules);
   return [...new Set([...workflowModules, ...stepModules])];
+}
+
+function normalizeModules(modules: string[] | string | undefined): string[] {
+  if (!modules) return [];
+  if (Array.isArray(modules)) return modules;
+  return [modules];
+}
+
+export function captureActiveTools(pi: ExtensionAPI): string[] {
+  const { shown, modules } = getModuleState(pi);
+  return computeToolsForModules(pi, modules, shown);
 }
 
 export function applyStepModules(
@@ -75,22 +88,41 @@ export function applyStepModules(
   config: WorkflowConfig,
   step: PromptStep,
 ): void {
-  // Always hide all modules first — clean slate for every step
-  pi.events.emit("module:set", { names: [] });
-
   const effective = computeEffectiveModules(config, step);
-  if (effective.length > 0) {
-    pi.events.emit("module:set", { names: effective });
-  }
+  const { modules } = getModuleState(pi);
+  pi.setActiveTools(computeToolsForModules(pi, modules, effective));
 }
 
-export async function restoreOriginalModules(
+export async function restoreOriginalActiveTools(
   pi: ExtensionAPI,
   state: WorkflowState,
 ): Promise<void> {
-  if (!state.originalModules) return;
-  pi.events.emit("module:set", { names: state.originalModules });
-  state.originalModules = null;
+  if (!state.originalActiveTools) return;
+  pi.setActiveTools(state.originalActiveTools);
+  state.originalActiveTools = null;
+}
+
+function getModuleState(pi: ExtensionAPI): { shown: string[]; modules: Map<string, ModuleContents> } {
+  let shown: string[] = [];
+  let modules: Map<string, ModuleContents> = new Map();
+
+  pi.events.emit("module:get-state", {
+    callback: (info: { shown: string[]; modules: Map<string, ModuleContents> }) => {
+      shown = info.shown;
+      modules = info.modules;
+    },
+  });
+
+  return { shown, modules };
+}
+
+function computeToolsForModules(
+  pi: ExtensionAPI,
+  modules: Map<string, ModuleContents>,
+  shownModules: string[],
+): string[] {
+  const allToolNames = pi.getAllTools().map((t) => t.name);
+  return computeActiveTools(allToolNames, modules, { shown: shownModules, granular: {} });
 }
 
 export function currentStep(state: WorkflowState): WorkflowStep | null {
@@ -297,7 +329,7 @@ export async function handlePostStep(
     const name = state.active!.config.name;
     state.active = null;
     updateStatus(state, ctx);
-    await restoreOriginalModules(pi, state);
+    await restoreOriginalActiveTools(pi, state);
     restoreOriginalThinkingLevel(pi, state);
     await restoreOriginalModel(pi, state, ctx);
     ctx.ui.notify(
@@ -478,7 +510,7 @@ async function completeWorkflow(
   state.active = null;
   updateStatus(state, ctx);
   state.advancing = false;
-  await restoreOriginalModules(pi, state);
+  await restoreOriginalActiveTools(pi, state);
   restoreOriginalThinkingLevel(pi, state);
   await restoreOriginalModel(pi, state, ctx);
 }
