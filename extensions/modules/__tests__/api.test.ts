@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { moduleTag } from "../api.js";
+import { moduleTag, UNTAGGED_MODULE } from "../api.js";
 
 describe("moduleTag", () => {
   it("emits module:tool-tag event and returns tool def unchanged", () => {
@@ -19,4 +19,8 @@ describe("moduleTag", () => {
       data: { toolName: "my-tool", moduleName: "my-module" },
     }]);
   });
+});
+
+it("exports the internal UNTAGGED module name", () => {
+  expect(UNTAGGED_MODULE).toBe("UNTAGGED");
 });

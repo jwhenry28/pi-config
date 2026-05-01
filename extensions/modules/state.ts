@@ -1,4 +1,5 @@
 import { readKey, writeKey } from "../memory/store.js";
+import { UNTAGGED_MODULE } from "./api.js";
 import type { ModuleContents } from "./registry.js";
 
 // --- Types ---
@@ -43,6 +44,16 @@ export function saveState(cwd: string, state: ModuleState): void {
 }
 
 /**
+ * Normalize a user-controlled list of shown modules.
+ */
+export function normalizeUserShownModules(
+  names: string[],
+  modules: Map<string, ModuleContents>,
+): string[] {
+  return names.filter((name) => name !== UNTAGGED_MODULE && modules.has(name));
+}
+
+/**
  * Compute which tool names should be active given the current module state.
  *
  * Rules:
@@ -55,9 +66,8 @@ export function computeActiveTools(
   modules: Map<string, ModuleContents>,
   state: ModuleState,
 ): string[] {
-  // Build a set of tool names belonging to hidden modules
   const excludedTools = new Set<string>();
-  const shownModules = state.shown ?? [];
+  const shownModules = normalizeUserShownModules(state.shown ?? [], modules);
   for (const [moduleName, contents] of modules) {
     if (shownModules.includes(moduleName)) continue;
     for (const toolName of contents.tools) {
@@ -83,7 +93,7 @@ export function computeExcludedSkillNames(
   state: ModuleState,
 ): Set<string> {
   const excluded = new Set<string>();
-  const shownModules = state.shown ?? [];
+  const shownModules = normalizeUserShownModules(state.shown ?? [], modules);
   for (const [moduleName, contents] of modules) {
     if (shownModules.includes(moduleName)) continue;
     for (const skill of contents.skills) {

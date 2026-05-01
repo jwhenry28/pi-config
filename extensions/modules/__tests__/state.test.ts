@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { computeActiveTools, computeExcludedSkillNames } from "../state.js";
+import { computeActiveTools, computeExcludedSkillNames, normalizeUserShownModules } from "../state.js";
+import { UNTAGGED_MODULE } from "../api.js";
 import type { ModuleContents } from "../registry.js";
 import type { ResolvedSkill } from "../../shared/types.js";
 
@@ -33,6 +34,17 @@ describe("computeActiveTools", () => {
     const result = computeActiveTools(["tool-a", "untagged"], modules, state);
     expect(result).toEqual(["untagged"]);
   });
+
+  it("excludes UNTAGGED tools unless explicitly appended by internal workflow code", () => {
+    const modules = new Map<string, ModuleContents>([
+      [UNTAGGED_MODULE, { skills: [], tools: ["pause_workflow"] }],
+    ]);
+    const state = { shown: [UNTAGGED_MODULE], granular: {} };
+
+    const result = computeActiveTools(["pause_workflow", "memory_get"], modules, state);
+
+    expect(result).toEqual(["memory_get"]);
+  });
 });
 
 describe("computeExcludedSkillNames", () => {
@@ -62,5 +74,27 @@ describe("computeExcludedSkillNames", () => {
     const state = { shown: ["mod-a"], granular: {} };
     const result = computeExcludedSkillNames(modules, state);
     expect(result).toEqual(new Set());
+  });
+
+  it("does not treat UNTAGGED as user-shown when excluding skills", () => {
+    const modules = new Map<string, ModuleContents>([
+      [UNTAGGED_MODULE, { skills: [makeSkill("internal-skill")], tools: [] }],
+    ]);
+    const state = { shown: [UNTAGGED_MODULE], granular: {} };
+
+    const result = computeExcludedSkillNames(modules, state);
+
+    expect(result).toEqual(new Set(["internal-skill"]));
+  });
+});
+
+describe("normalizeUserShownModules", () => {
+  it("drops unknown modules and the internal UNTAGGED module", () => {
+    const modules = new Map<string, ModuleContents>([
+      ["ask", { skills: [], tools: ["ask_user"] }],
+      [UNTAGGED_MODULE, { skills: [], tools: ["pause_workflow"] }],
+    ]);
+
+    expect(normalizeUserShownModules(["ask", UNTAGGED_MODULE, "missing"], modules)).toEqual(["ask"]);
   });
 });

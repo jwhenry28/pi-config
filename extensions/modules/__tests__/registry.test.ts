@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { discoverModules } from "../registry.js";
+import { UNTAGGED_MODULE } from "../api.js";
 import type { ResolvedSkill } from "../../shared/types.js";
 
 function makeSkill(name: string, module?: string): ResolvedSkill {
@@ -29,5 +30,13 @@ describe("discoverModules", () => {
     const result = discoverModules(skills, new Map());
     expect(result.size).toBe(1);
     expect(result.has("mod-a")).toBe(true);
+  });
+
+  it("keeps UNTAGGED tools internally associated with the hidden module", () => {
+    const toolMap = new Map([["pause_workflow", UNTAGGED_MODULE]]);
+    const result = discoverModules([], toolMap);
+
+    expect(result.has(UNTAGGED_MODULE)).toBe(true);
+    expect(result.get(UNTAGGED_MODULE)!.tools).toEqual(["pause_workflow"]);
   });
 });
