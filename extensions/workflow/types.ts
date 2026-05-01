@@ -10,12 +10,14 @@ export interface PromptCondition {
 	model: string;
 	thinking?: WorkflowThinkingLevel;
 	jump: string;
+	explanation?: string;
 }
 
 export interface CommandCondition {
 	command: string;
 	args?: Record<string, string>;
 	jump: string;
+	explanation?: string;
 }
 
 export type StepCondition = PromptCondition | CommandCondition;
@@ -88,4 +90,8 @@ export interface WorkflowState {
 	originalActiveTools: string[] | null;
 	pendingConditionIndex: number | null;
 	errorPaused: boolean;
+	conditionJumpContext?: {
+		previousStepName: string;
+		explanation: string;
+	};
 }

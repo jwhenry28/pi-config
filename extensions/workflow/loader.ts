@@ -171,6 +171,15 @@ function parsePromptStep(
 
 // --- Condition parsing ---
 
+function parseConditionExplanation(raw: unknown, stepNum: number, condNum: number): string | undefined {
+	if (raw == null) return undefined;
+	if (typeof raw !== "string") {
+		throw new Error(`Step ${stepNum}, condition ${condNum}: 'explanation' must be a string`);
+	}
+	const trimmed = raw.trim();
+	return trimmed.length > 0 ? trimmed : undefined;
+}
+
 function parseCondition(raw: RawRecord, stepNum: number, condNum: number, cwd: string): PromptCondition | CommandCondition {
 	const hasCommand = "command" in raw && raw.command != null;
 	const hasPrompt = "prompt" in raw && raw.prompt != null;
@@ -182,6 +191,7 @@ function parseCondition(raw: RawRecord, stepNum: number, condNum: number, cwd: s
 		throw new Error(`Step ${stepNum}, condition ${condNum}: must have either 'command' or 'prompt'`);
 	}
 	if (!raw.jump) throw new Error(`Step ${stepNum}, condition ${condNum} missing 'jump'`);
+	const explanation = parseConditionExplanation(raw.explanation, stepNum, condNum);
 
 	if (hasCommand) {
 		if (raw.model) throw new Error(`Step ${stepNum}, condition ${condNum}: 'model' is not allowed with 'command'`);
@@ -190,6 +200,7 @@ function parseCondition(raw: RawRecord, stepNum: number, condNum: number, cwd: s
 			command: raw.command as string,
 			args: (raw.args as Record<string, string>) ?? undefined,
 			jump: raw.jump as string,
+			explanation,
 		} satisfies CommandCondition;
 	}
 
@@ -199,6 +210,7 @@ function parseCondition(raw: RawRecord, stepNum: number, condNum: number, cwd: s
 		model: resolveModelAlias(raw.model as string, cwd),
 		thinking: parseThinkingLevel(raw.thinking, `Step ${stepNum}, condition ${condNum}`),
 		jump: raw.jump as string,
+		explanation,
 	} satisfies PromptCondition;
 }
 

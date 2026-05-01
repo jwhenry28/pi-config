@@ -241,19 +241,31 @@ function escapeXml(s: string): string {
     .replace(/'/g, "&apos;");
 }
 
-function buildMessage(
+export interface ConditionJumpContext {
+  previousStepName: string;
+  explanation: string;
+}
+
+export function buildMessage(
   step: WorkflowStep,
   resolvedPrompt: string,
   workflowId: string,
   workflowName: string,
   workflowPrompt: string,
+  conditionJumpContext?: ConditionJumpContext,
 ): string {
   return messageTemplate
     .replaceAll("%WORKFLOW_ID%", workflowId)
     .replaceAll("%WORKFLOW_NAME%", workflowName)
     .replaceAll("%WORKFLOW_PROMPT%", workflowPrompt)
+    .replaceAll("%CONDITION_JUMP_EXPLANATION%", formatConditionJumpExplanation(conditionJumpContext))
     .replaceAll("%STEP_NAME%", step.name)
     .replaceAll("%STEP_PROMPT%", resolvedPrompt);
+}
+
+function formatConditionJumpExplanation(context?: ConditionJumpContext): string {
+  if (!context) return "";
+  return `You previously executed step ${context.previousStepName}, and a condition caused to you move to this step. The reason for this move is: _${context.explanation}_. Make sure to consider this reason, as it may dictate how you approach this current step (e.g., if the previous step failed for a particular reason.)\n`;
 }
 
 async function applyStepModel(
@@ -346,6 +358,7 @@ export async function handlePostStep(
 
   if (condResult.jump) {
     if (isMaxExecutionsReached(state, condResult.jump)) {
+      state.conditionJumpContext = undefined;
       const targetStep = state.active!.config.steps.find(
         (s) => s.name === condResult.jump,
       )!;
@@ -354,10 +367,13 @@ export async function handlePostStep(
         "warning",
       );
       await autoAdvance(pi, state, ctx);
-    } else {
-      jumpToStep(state, condResult.jump);
-      await autoJump(pi, state, ctx);
+      return;
     }
+
+    const previousStepName = step.name;
+    const jumped = jumpToStep(state, condResult.jump);
+    setConditionJumpContext(state, jumped, previousStepName, condResult.explanation);
+    await autoJump(pi, state, ctx);
     return;
   }
 
@@ -370,6 +386,24 @@ export async function handlePostStep(
   }
 
   await autoAdvance(pi, state, ctx);
+}
+
+function setConditionJumpContext(
+  state: WorkflowState,
+  jumped: boolean,
+  previousStepName: string,
+  explanation?: string,
+): void {
+  const shouldSetContext = jumped && Boolean(explanation);
+  if (!shouldSetContext) {
+    state.conditionJumpContext = undefined;
+    return;
+  }
+
+  state.conditionJumpContext = {
+    previousStepName,
+    explanation: explanation!,
+  };
 }
 
 export function isMaxExecutionsReached(
@@ -392,6 +426,7 @@ export async function runCurrentStep(
 ): Promise<void> {
   if (!state.active) return;
   const step = currentStep(state)!;
+  const conditionJumpContext = state.conditionJumpContext;
 
   // Track execution count
   state.active.executionCounts[step.name] =
@@ -414,6 +449,7 @@ export async function runCurrentStep(
     createDiagnostics(state.cwd, state.active.id, state.active.config.name);
   }
   if (isCommandStep(step)) {
+    state.conditionJumpContext = undefined;
     const fn = getStepCommand(step.command);
     if (!fn) {
       ctx.ui.notify(
@@ -476,7 +512,9 @@ export async function runCurrentStep(
     state.active.id,
     state.active.config.name,
     workflowPrompt,
+    conditionJumpContext,
   );
+  state.conditionJumpContext = undefined;
   pi.sendUserMessage(message);
 }
 
@@ -551,7 +589,7 @@ export async function evaluateConditions(
   pi: ExtensionAPI,
   state: WorkflowState,
   ctx: ExtensionContext,
-): Promise<{ jump: string } | "paused" | null> {
+): Promise<{ jump: string; explanation?: string } | "paused" | null> {
   const step = currentStep(state);
   if (!step?.conditions?.length) return null;
 
@@ -639,7 +677,7 @@ export async function evaluateConditions(
 
     if (parsed.result === "true") {
       state.pendingConditionIndex = null;
-      return { jump: cond.jump };
+      return { jump: cond.jump, explanation: cond.explanation };
     }
   }
 

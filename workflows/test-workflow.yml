@@ -9,6 +9,7 @@ steps:
         args:
           memoryKey: todo-path
         jump: Save Todo Path Memory
+        explanation: The todo-path workflow memory key is missing, so the workflow needs to save the todo file path before checking or editing the file.
 
   - name: Save Todo Path Memory
     model: fast
@@ -22,10 +23,11 @@ steps:
     prompt: |
       Briefly acknowledge this step. Do not modify files.
     conditions:
-      - command: file_not_exists
+      - command: file-not-exists
         args:
           memoryKey: todo-path
         jump: Create Todo
+        explanation: The todo file referenced by workflow memory does not exist yet, so the workflow needs to create it before completing items.
 
   - name: Create Todo
     model: fast
@@ -43,7 +45,8 @@ steps:
       Read "todo.md" in the current directory. Find the first unchecked item
       ([ ]) and mark it as completed ([x]). Write the file back. Do nothing else.
     conditions:
-      - command: check-todos-complete
+      - command: incomplete-todos-remaining
         args:
           memoryKey: todo-path
         jump: Complete Item
+        explanation: The todo list still has unchecked items, so continue looping on the completion step until all items are done or the execution limit is reached.
