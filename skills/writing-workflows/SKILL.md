@@ -45,6 +45,7 @@ steps:
         args:
           memoryKey: plan-todo
         jump: Implement
+        explanation: The todo list still has unchecked items, so continue implementing before advancing.
 
   - name: Quick Check
     command: check-todos-complete
@@ -140,6 +141,8 @@ steps:
 
 Conditions evaluate after a step completes. If a condition returns `"yes"`, the workflow jumps to the named step. If all return `"no"`, the workflow advances sequentially.
 
+Add `explanation` when the jump target is a prompt step. When that condition actually causes a jump, the explanation is injected into the target prompt so the next agent knows why it was reached. Missing, empty, or whitespace-only explanations are ignored.
+
 ### Prompt Conditions
 
 Use an LLM to evaluate:
@@ -150,6 +153,7 @@ conditions:
       Check whether there are remaining issues.
     model: fast
     jump: Fix Issues
+    explanation: The previous result still has unresolved issues that need another fix pass.
 ```
 
 ### Command Conditions
@@ -162,9 +166,10 @@ conditions:
     args:
       memoryKey: plan-todo
     jump: Implement
+    explanation: The todo list still has unchecked items, so continue implementing before advancing.
 ```
 
-`prompt` and `command` are mutually exclusive in conditions, same as in steps.
+`prompt` and `command` are mutually exclusive in conditions, same as in steps. `explanation` is optional for both condition types.
 
 ### Available Commands
 
@@ -252,4 +257,5 @@ steps:
         args:
           memoryKey: plan-todo
         jump: Implement
+        explanation: The implementation todo list still has unchecked items, so keep working through the plan.
 ```

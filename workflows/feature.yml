@@ -21,7 +21,8 @@ steps:
     skills:
       - executing-plans
     conditions:
-      - command: check-todos-complete
+      - command: incomplete-todos-remaining
         args:
           memoryKey: plan-todo
         jump: Implement
+        explanation: The implementation todo list still has unchecked items, so continue working through the plan before moving on.

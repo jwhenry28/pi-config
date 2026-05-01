@@ -146,7 +146,7 @@ describe("workflow diagnostics (component)", () => {
             maxExecutions: 3,
             conditions: [
               {
-                command: "check-todos-complete",
+                command: "incomplete-todos-remaining",
                 args: { todoFilepath: "diag-tasks.md" },
                 jump: "DoWork",
               },
@@ -163,9 +163,7 @@ describe("workflow diagnostics (component)", () => {
       await new Promise((r) => setTimeout(r, 200));
 
       // Mark complete before execution 2
-      writeTodo(test.cwd, "diag-tasks.md", [
-        { text: "Task A", checked: true },
-      ]);
+      writeTodo(test.cwd, "diag-tasks.md", [{ text: "Task A", checked: true }]);
 
       // Execution 2: todos complete → advance to Done
       await test.mockAgentResponse({ text: "Finished" });

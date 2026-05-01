@@ -12,11 +12,10 @@ Available Workflows:
 
 ```text
 .pi/workflows
-├── cfg-feature.yml
 ├── feature.yml
-├── pi-extension.yml
+├── pi-feature.yml
 ├── simple-feature.yml
 └── test-workflow.yml
 
-1 directory, 5 files
+1 directory, 4 files
 ```

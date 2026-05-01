@@ -3,6 +3,7 @@ Workflow: %WORKFLOW_ID%
 You are running one step in the '%WORKFLOW_NAME%' workflow. The top-level goal of this workflow is:
 %WORKFLOW_PROMPT%
 
+%CONDITION_JUMP_EXPLANATION%
 You are currently on step '%STEP_NAME%'. For this step, you must:
 %STEP_PROMPT%
 

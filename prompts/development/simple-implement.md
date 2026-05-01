@@ -13,6 +13,8 @@ less than 3 remain). For each task:
 2. Implement the task
 3. Mark it complete in todo.md (change `- [ ]` to `- [x]`)
 
+YOU MUST UPDATE THE TODO.MD file TO REFLECT YOUR CHANGES.
+
 After completing the batch, stop. Do not continue to the next batch —
 the workflow will re-enter this step automatically if tasks remain.
 

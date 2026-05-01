@@ -1,7 +1,8 @@
-name: Extension Implementation
+name: Pi Extension Implementation
 steps:
   - name: Brainstorm
     model: smart
+    thinking: high
     prompt: "@development/brainstorm.md"
     skills:
       - brainstorming
@@ -16,37 +17,17 @@ steps:
       - writing-plans
       - writing-pi-tests
 
-  - name: Component Tests
-    model: smart
-    prompt: |
-      Read the plan directory from memory key "plan" and the todo file path from memory key "plan-todo".
-      Review the existing plan tasks and the extension being developed.
-
-      Add one or more new component test tasks as the next taskN.md file(s) in the plan directory.
-      The tasks should describe writing component tests for the extension, focusing on:
-      - Slash commands (if any)
-      - Agent tools (if any)
-
-      If the extension has neither slash commands nor agent tools, add a single task noting
-      that no component tests are needed, then skip.
-
-      Follow the writing-pi-tests skill patterns for test structure and conventions.
-
-      Then append new unchecked `- [ ]` items for each test task to the todo.md file.
-    skills:
-      - writing-pi-tests
-      - writing-pi-extensions
-
   - name: Implement
     model: smart
     prompt: "@development/implement.md"
     skills:
       - executing-plans
     conditions:
-      - command: check-todos-complete
+      - command: incomplete-todos-remaining
         args:
           memoryKey: plan-todo
         jump: Implement
+        explanation: The implementation todo list still has unchecked items, so continue working through the plan before moving on.
 
   - name: Code Review
     model: smart
