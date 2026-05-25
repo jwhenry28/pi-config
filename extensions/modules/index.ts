@@ -4,8 +4,8 @@ import { getCwd } from "../shared/cwd.js";
 import type { ResolvedSkill } from "../shared/types.js";
 import { discoverModules, type ModuleContents } from "./registry.js";
 import { formatModulesBlock } from "./display.js";
-import { loadState, saveState, computeActiveTools, computeExcludedSkillNames, type ModuleState } from "./state.js";
-import { drainToolTagBuffer, type ModuleToolTagEvent } from "./api.js";
+import { loadState, saveState, computeActiveTools, computeExcludedSkillNames, normalizeUserShownModules, type ModuleState } from "./state.js";
+import { drainToolTagBuffer, type ModuleToolTagEvent, UNTAGGED_MODULE } from "./api.js";
 
 export default function modulesExtension(pi: ExtensionAPI) {
   // --- Shared state ---
@@ -91,6 +91,7 @@ export default function modulesExtension(pi: ExtensionAPI) {
    * Show a module by name. Returns false if the module doesn't exist or is already shown.
    */
   function showModule(name: string): boolean {
+    if (name === UNTAGGED_MODULE) return false;
     if (!modules.has(name)) return false;
     if (!state.shown) state.shown = [];
     if (state.shown.includes(name)) return false;
@@ -103,6 +104,7 @@ export default function modulesExtension(pi: ExtensionAPI) {
    * Hide a module by name. Returns false if the module doesn't exist or isn't shown.
    */
   function hideModule(name: string): boolean {
+    if (name === UNTAGGED_MODULE) return false;
     if (!modules.has(name)) return false;
     if (!state.shown) state.shown = [];
     const idx = state.shown.indexOf(name);
@@ -116,8 +118,12 @@ export default function modulesExtension(pi: ExtensionAPI) {
    * Set the exact list of shown modules. Invalid names are silently ignored.
    */
   function setModules(names: string[]): void {
-    state.shown = names.filter(name => modules.has(name));
+    state.shown = normalizeUserShownModules(names, modules);
     commitState();
+  }
+
+  function visibleModuleNames(): string[] {
+    return Array.from(modules.keys()).filter((name) => name !== UNTAGGED_MODULE);
   }
 
   /**
@@ -164,6 +170,7 @@ export default function modulesExtension(pi: ExtensionAPI) {
   pi.registerCommand("module", {
     description: "Manage modules: show, hide, list",
     getArgumentCompletions: (prefix) => {
+      ensureInitialized();
       const parts = prefix.split(/\s+/);
 
       if (parts.length <= 1) {
@@ -178,7 +185,7 @@ export default function modulesExtension(pi: ExtensionAPI) {
       const needsModuleCompletion = subcommand === "show" || subcommand === "hide" || subcommand === "list";
       if (!needsModuleCompletion) return null;
 
-      const moduleNames = Array.from(modules.keys());
+      const moduleNames = visibleModuleNames();
       const filtered = moduleNames.filter(n => n.startsWith(modulePrefix));
       return filtered.length > 0 ? filtered.map(n => ({ value: `${subcommand} ${n}`, label: n })) : null;
     },
@@ -211,7 +218,8 @@ export default function modulesExtension(pi: ExtensionAPI) {
             ctx.ui.notify("Usage: /module show <name>", "warning");
             return;
           }
-          if (!modules.has(moduleName)) {
+          const moduleIsUnavailable = !modules.has(moduleName) || moduleName === UNTAGGED_MODULE;
+          if (moduleIsUnavailable) {
             ctx.ui.notify(`Module "${moduleName}" not found`, "error");
             return;
           }
@@ -230,7 +238,8 @@ export default function modulesExtension(pi: ExtensionAPI) {
             ctx.ui.notify("Usage: /module hide <name>", "warning");
             return;
           }
-          if (!modules.has(moduleName)) {
+          const moduleIsUnavailable = !modules.has(moduleName) || moduleName === UNTAGGED_MODULE;
+          if (moduleIsUnavailable) {
             ctx.ui.notify(`Module "${moduleName}" not found`, "error");
             return;
           }
@@ -247,7 +256,8 @@ export default function modulesExtension(pi: ExtensionAPI) {
           const moduleName = parts[1];
           if (moduleName) {
             const contents = modules.get(moduleName);
-            if (!contents) {
+            const moduleIsUnavailable = !contents || moduleName === UNTAGGED_MODULE;
+            if (moduleIsUnavailable) {
               ctx.ui.notify(`Module "${moduleName}" not found`, "error");
               return;
             }
@@ -270,12 +280,12 @@ export default function modulesExtension(pi: ExtensionAPI) {
             }
             ctx.ui.notify(lines.join("\n"), "info");
           } else {
-            const names = Array.from(modules.keys()).sort();
+            const names = visibleModuleNames().sort();
             if (names.length === 0) {
               ctx.ui.notify("No modules found. Tag skills with `module: <name>` in their SKILL.md frontmatter.", "info");
               return;
             }
-            const shownModules = state.shown ?? [];
+            const shownModules = normalizeUserShownModules(state.shown ?? [], modules);
             const text = formatModulesBlock(
               names.map((name) => ({ name, shown: shownModules.includes(name) })),
               {
@@ -319,7 +329,7 @@ export default function modulesExtension(pi: ExtensionAPI) {
     // response includes skill-backed modules, not just tool-tagged modules.
     if (data.cwd) hydrateSession(data.cwd);
     ensureInitialized();
-    const shownModules = state.shown ?? [];
+    const shownModules = normalizeUserShownModules(state.shown ?? [], modules);
     data.callback({ shown: [...shownModules], modules });
   });
 }

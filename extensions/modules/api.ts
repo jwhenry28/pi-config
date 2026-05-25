@@ -30,6 +30,9 @@ export interface ModuleToolTagEvent {
 /** Key used to store the replay buffer on the shared event bus. */
 const REPLAY_KEY = "__module_tool_tags__";
 
+/** Special internal module tag for tools that should never be user-addressable. */
+export const UNTAGGED_MODULE = "UNTAGGED";
+
 /**
  * Tag a tool definition with a module name.
  * Emits a "module:tool-tag" event on the shared event bus and appends to

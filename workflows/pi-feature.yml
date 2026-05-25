@@ -47,4 +47,5 @@ steps:
       - knowing-clean-code
       - writing-pi-extensions
       - writing-pi-tests
+    modules: ask
     approval: true

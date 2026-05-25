@@ -7,6 +7,7 @@ import { loadAllSkills } from "../shared/skill-loader.js";
 import { getCwd } from "../shared/cwd.js";
 import type { WorkflowState } from "./types.js";
 import { isPromptStep } from "./types.js";
+import { registerPauseWorkflowTool } from "./pause-tool.js";
 import { listWorkflows, loadWorkflowFile, validate } from "./loader.js";
 import { completeNames } from "../shared/yaml-files.js";
 import {
@@ -25,6 +26,7 @@ import {
   jumpToStep,
   autoJump,
   isMaxExecutionsReached,
+  shouldSkipPostStepForPause,
 } from "./runner.js";
 import { createMemoryDomain, setWorkflowPrompt } from "./prompt-memory.js";
 import { writeKey } from "../memory/store.js";
@@ -55,6 +57,7 @@ export default function workflowExtension(pi: ExtensionAPI) {
     conditionJumpContext: undefined,
   };
 
+  registerPauseWorkflowTool(pi, state);
   registerWorkflowCommand(pi, state);
   registerEvaluateConditionCommand(pi, state);
   registerWorkflowEvents(pi, state);
@@ -446,6 +449,10 @@ function registerWorkflowEvents(pi: ExtensionAPI, state: WorkflowState): void {
         `⏸️ Workflow paused (agent error). Use \`/workflow continue\` to retry the current step, or \`/workflow abort\` to cancel.`,
         "warning",
       );
+      return;
+    }
+
+    if (shouldSkipPostStepForPause(state)) {
       return;
     }
 

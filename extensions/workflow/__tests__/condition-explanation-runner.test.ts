@@ -117,7 +117,7 @@ describe("workflow runner condition jump explanation", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(userMessages[0]).toContain(
-      "The reason for this move is: The TODO list still has unchecked items.",
+      "The reason for this move is: _The TODO list still has unchecked items._",
     );
     expect(userMessages[0]).not.toContain("runtime evaluator explanation");
     expect(state.conditionJumpContext).toBeUndefined();

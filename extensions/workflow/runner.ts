@@ -34,6 +34,7 @@ import { createDiagnostics, completeDiagnostics, recordStepUsage, type TokenUsag
 import { createMemoryDomain, getWorkflowPrompt } from "./prompt-memory.js";
 import { computeActiveTools } from "../modules/state.js";
 import type { ModuleContents } from "../modules/registry.js";
+import { PAUSE_WORKFLOW_TOOL } from "./pause-tool.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const messageTemplate = readFileSync(
@@ -90,7 +91,8 @@ export function applyStepModules(
 ): void {
   const effective = computeEffectiveModules(config, step);
   const { modules } = getModuleState(pi);
-  pi.setActiveTools(computeToolsForModules(pi, modules, effective));
+  const stepTools = computeToolsForModules(pi, modules, effective);
+  pi.setActiveTools(appendWorkflowPromptTools(stepTools));
 }
 
 export async function restoreOriginalActiveTools(
@@ -123,6 +125,12 @@ function computeToolsForModules(
 ): string[] {
   const allToolNames = pi.getAllTools().map((t) => t.name);
   return computeActiveTools(allToolNames, modules, { shown: shownModules, granular: {} });
+}
+
+function appendWorkflowPromptTools(toolNames: string[]): string[] {
+  const pauseToolAlreadyActive = toolNames.includes(PAUSE_WORKFLOW_TOOL);
+  if (pauseToolAlreadyActive) return toolNames;
+  return [...toolNames, PAUSE_WORKFLOW_TOOL];
 }
 
 export function currentStep(state: WorkflowState): WorkflowStep | null {
@@ -316,6 +324,10 @@ function applyStepThinkingLevel(
   step: PromptStep,
 ): void {
   pi.setThinkingLevel(step.thinking ?? "off");
+}
+
+export function shouldSkipPostStepForPause(state: WorkflowState): boolean {
+  return state.errorPaused;
 }
 
 export async function handlePostStep(
