@@ -12,8 +12,22 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import type { ModuleContents } from "./modules/registry.js";
+import { UNTAGGED_MODULE } from "./modules/api.js";
 import { formatModulesBlock } from "./modules/display.js";
 import { getCwd } from "./shared/cwd.js";
+
+export function buildStartupModuleList(
+  modules: Map<string, ModuleContents>,
+  shown: string[],
+): Array<{ name: string; shown: boolean }> {
+  return Array.from(modules.keys())
+    .filter((name) => name !== UNTAGGED_MODULE)
+    .sort()
+    .map((name) => ({
+      name,
+      shown: shown.includes(name),
+    }));
+}
 
 export default function (pi: ExtensionAPI) {
   pi.registerMessageRenderer("startup-modules", (message, _options, theme) => {
@@ -58,13 +72,8 @@ export default function (pi: ExtensionAPI) {
         },
       });
 
-      const names = Array.from(modules.keys()).sort();
-      if (names.length === 0) return;
-
-      const moduleList = names.map((name) => ({
-        name,
-        shown: shown.includes(name),
-      }));
+      const moduleList = buildStartupModuleList(modules, shown);
+      if (moduleList.length === 0) return;
 
       pi.sendMessage({
         customType: "startup-modules",

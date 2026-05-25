@@ -32,4 +32,5 @@ steps:
       - knowing-clean-code
       - knowing-dry
       - knowing-yagni
+    modules: ask
     approval: true
