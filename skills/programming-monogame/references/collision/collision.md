@@ -2,300 +2,196 @@
 id: collision
 sidebar_label: Collision
 title: Collision
-description: 2D grid-based collision system.
+description: Actor/world collision management and low level 2D collision queries for MonoGame.Extended.
 ---
 
 :::tip[Up to date]
-This page is **up to date** for MonoGame.Extended `@mgeversion@`.  If you find outdated information, [please open an issue](https://github.com/monogame-extended/monogame-extended.github.io/issues).
+This page is **up to date** for MonoGame.Extended `@mgeversion@`. If you find outdated information, [please open an issue](https://github.com/monogame-extended/monogame-extended.github.io/issues).
 :::
 
-## Requirements
+The MonoGame.Extended collision system in 6.0 is split into two layers:
 
-To use the Collision code, you need to perform the following 4 steps:
-1. Create a class that implements the `ICollisionActor` interface.
-1. Implement the `OnCollision` method in the class created in step 1.  This defines what happens when something hits your object.
-1. Create an instance of `CollisionComponent` which defines the bounds where collisions are checked.
-1. `Insert` an instance of your class into the CollisionComponent.
+- a low level geometry layer built around explicit bounding volumes and `Collision2D`
+- an actor/world layer built around `ICollisionActor`, `CollisionShape2D`, and `CollisionWorld2D`
 
-### ICollisionActor
+This separation lets you choose the level of abstraction that fits your game. If you want to manage actors, layers, and broadphase queries, start with `CollisionWorld2D`. If you only need shape tests, containment checks, or allocation free geometry routines, use the bounding volume types and `Collision2D` directly.
 
-This is an interface you need to create a class from and implement the method and override the properties.  At minimum you need to implement `OnCollision` and override `Bounds` so you can provide the rectangle that is used to perform collision detection.
+## Where to Start
 
-In the below example, you can see that `LayerName` overrides the interfaces implementation so we can state the layer this entity will belong to.  `Layers` are discussed in the [Advanced Topics](#advanced-topics-optional) section at the bottom.
+For most gameplay collision systems, start with the actor/world layer:
 
-The `OnCollision` method was implemented and simply reverses the direction of object by flipping it's velocity and moving it back the way it came.
+- `ICollisionActor` defines the objects that participate in world queries
+- `CollisionShape2D` wraps the actor's collision shape without using `IShapeF`
+- `CollisionWorld2D` stores actors in named layers, owns layer membership, and provides candidate, collision, and pair queries
+- `CollisionResult2D` returns overlap state, collision normal, penetration depth, and minimum translation vector
+
+If you are moving from MonoGame.Extended 5.5.1, read the [Migration Guide](./migration.md) after this page. If you want the step-by-step setup path for a new project, go to [Collision Quick Start](./quick-start.md). If you want the architecture, query flow, and performance rationale behind the system design, go to the [Collision Technical Reference](./technical-reference.md).
+
+## Collision Architecture
+
+### Low Level Geometry Layer
+
+The low level layer lives in the `MonoGame.Extended` namespace and is centered on explicit geometric types such as:
+
+- `BoundingBox2D`
+- `BoundingCircle2D`
+- `BoundingCapsule2D`
+- `OrientedBoundingBox2D`
+- `BoundingPolygon2D`
+- `Line2D`
+- `LineSegment2D`
+- `Ray2D`
+
+These types provide:
+
+- `Intersects(...)` boolean overlap tests
+- `Contains(...)` containment queries
+- transformation and translation helpers
+- direct access to lower level `Collision2D` routines when needed
+
+For the full geometry reference, see [2D Geometry](./2d-geometry.md).
+
+### Actor/World Collision Layer
+
+The actor/world layer builds on top of those geometric primitives for gameplay collision management.
+
+In this layer:
+
+- actors implement `ICollisionActor`
+- actor shapes are exposed as `CollisionShape2D`
+- broadphase uses `CollisionShape2D.BoundingBox`
+- narrowphase uses `CollisionShape2D.Intersects(...)` or `CollisionShape2D.TryGetCollision(...)`
+- collision filtering uses explicit named layer rules
+
+This is the recommended layer for character controllers, triggers, hazards, projectiles, and other gameplay objects that need world queries or collision resolution data.
+
+## Recommended API: `CollisionWorld2D`
+
+`CollisionWorld2D` is the primary query oriented collision API in 6.0. It stores actors in named layers, uses broadphase queries to reduce candidate checks, and exposes collision results relative to the actor being queried.
+
+Typical flow:
+
+1. Implement `ICollisionActor`.
+2. Expose a `CollisionShape2D` for the actor.
+3. Create one or more `Layer` instances.
+4. Register those layers with `CollisionWorld2D`.
+5. Enable the layer pairs that should collide.
+6. Insert actors into the default or named layers.
+7. Query collisions, inspect membership, or move actors between layers during gameplay as needed.
+
+The result of a narrowphase collision query is a `CollisionResult2D`. Its `MinimumTranslationVector` moves the receiving shape out of the other shape, which makes it suitable for simple overlap resolution.
 
 ```csharp
-public class MyEntity : ICollisionActor
+foreach (CollisionEvent2D collision in world.QueryCollisions(playerActor, "walls"))
 {
-    public Vector2 Velocity;
-
-    public MyEntity(RectangleF bounds, string layerName)
-    {
-        Bounds = bounds;
-        LayerName = layerName;
-    }
-
-    public IShapeF Bounds { get; set; }
-
-    public String LayerName { get; set; }
-
-    public void OnCollision(CollisionEventArgs collisionInfo)
-    {
-        Velocity.X *= -1;
-        Velocity.Y *= -1;
-        Bounds.Position -= collisionInfo.PenetrationVector;
-    }
+    playerPosition += collision.Result.MinimumTranslationVector;
 }
 ```
 
-### CollisionComponent
+For a full walkthrough, see [Collision Quick Start](./quick-start.md).
 
-This is the main driver that manages the collide-able entities.  This class passes the entities position updates down to the [`Space Algorithm`](#space-algorithms).  Finally it does the collision checks between entities in layers.  All entities in each layer are always checked against the entities in the default layer.  
+### Why There Is No `Update()`
 
-If you `Insert` entities into the `CollisionComponent`, it inserts them to a default layer, named appropriately "default".  `CollisionComponent` uses a `QuadTree` in the Default layer.  However if you create your own Layer, you can use a `SpatialHash` instead.
+`CollisionWorld2D` deliberately does not have an `Update()` method.
 
-This allows you to add layers where you don't want certain elements to interact with each-other by adding them to different layers.  For instance if your game has a water layer, ground layer, and sky layer.  Each of those would only compare objects against the default layer.  
+That design keeps responsibilities separate:
 
-Entities within the same layer are not compared against each-other, except the default layer.
+- your game code owns actor movement, state changes, and frame timing
+- `CollisionWorld2D` owns broadphase storage, layer rules, and collision queries
 
-Comparisons are done:
-1. `default` against `default`
-1. `default` against `N layer` (Where "N layer" is any layer added via `CollisionComponent.Add`)
+This avoids hidden rebuild work and avoids guessing when actor movement for the current step is "done." Instead, the world exposes `RebuildDynamicLayers()` as an explicit synchronization point after you finish updating actor shapes and before you run the next set of queries.
 
-Example creating a CollisionComponent and replacing the default layer with "ground":
-```csharp
-// See Layers below under Advanced Topics for details on creating a Layer
-CollisionComponent collisionComponent = new CollisionComponent("ground", myQuadLayer); 
-```
+## Shapes and Result Queries
 
-## Full Example
+`CollisionShape2D` is a wrapper for the actor/world layer. It can represent the currently supported collision shapes including:
 
-In this example, we will make a simple sandbox where shapes can move and collide with each other.
+- `BoundingBox2D`
+- `BoundingCircle2D`
+- `OrientedBoundingBox2D`
+- `BoundingCapsule2D`
+- `BoundingPolygon2D`
 
-We start by defining an `IEntity` interface that inherits `ICollisionActor`, so we can insert the entities into our `CollisionComponent`.  This is optional, but has benefits.
+There are two main query styles:
 
-```csharp
-public interface IEntity : ICollisionActor
-{
-    public void Update(GameTime gameTime);
-    public void Draw(SpriteBatch spriteBatch);
-}
-```
+- `Intersects(...)` when you only need to know whether two shapes overlap
+- `TryGetCollision(...)` when you also need collision result data
 
-Next, we define our entity classes
+:::warning
+`CollisionShape2D.Intersects(...)` supports more shape pairs than `CollisionShape2D.TryGetCollision(...)`. If you need a `CollisionResult2D`, make sure the specific shape pair you are using supports result returning queries in the current preview.
+:::
 
-The `OnCollision` method and the Bounds property come from the `ICollisionActor` interface. These will be called by the `CollisionComponent`.
+## Layers and Filtering
 
-```csharp
-public class CubeEntity : IEntity
-{
-    public Vector2 Velocity;
-    public IShapeF Bounds { get; }
+The 6.0 collision system uses explicit named layer rules instead of the older implicit behavior.
 
-    public CubeEntity(RectangleF rectangleF)
-    {
-        Bounds = rectangleF;
-        RandomizeVelocity();
-    }
+That means:
 
-    public virtual void Draw(SpriteBatch spriteBatch)
-    {
-        spriteBatch.DrawRectangle((RectangleF)Bounds, Color.Red, 3);
-    }
+- layers must be registered in the collision world
+- collisions only occur for layer pairs that are enabled
+- self collision is controlled explicitly per layer pair
+- broadphase candidates can be filtered out before narrowphase work runs
 
-    public virtual void Update(GameTime gameTime)
-    {
-        Bounds.Position += Velocity * gameTime.GetElapsedSeconds() * 50;
-    }
+This makes collision behavior easier to inspect and easier to disable for unrelated groups of actors.
 
-    public void OnCollision(CollisionEventArgs collisionInfo)
-    {
-        Velocity.X *= -1;
-        Velocity.Y *= -1;
-        Bounds.Position -= collisionInfo.PenetrationVector;
-    }
+### World Owned Membership
 
-    private void RandomizeVelocity()
-    {
-        Velocity.X = Random.Shared.Next(-1, 2);
-        Velocity.Y = Random.Shared.Next(-1, 2);
-    }
-}
+In 6.0 preview, layer membership belongs to `CollisionWorld2D`, not to `ICollisionActor`.
 
-public class BallEntity : IEntity
-{
-    public Vector2 Velocity;
-    public IShapeF Bounds { get; }
+That means:
 
-    public BallEntity(CircleF circleF)
-    {
-        Bounds = circleF;
-        RandomizeVelocity();
-    }
+- `Insert(actor)` places the actor into the default layer
+- `Insert(actor, "layerName")` places the actor into a specific registered layer
+- inserting the same actor into the same world twice is an error
+- `MoveToLayer(actor, "layerName")` is the explicit way to change membership
+- `Contains(...)`, `TryGetLayerName(...)`, and `GetLayerName(...)` let you inspect world specific membership
 
-    public void Draw(SpriteBatch spriteBatch)
-    {
-        spriteBatch.DrawCircle((CircleF)Bounds, 8, Color.Red, 3f);
-    }
+This keeps layer placement tied to the world that owns it and allows the same actor to participate in more than one collision world when needed.
 
-    public void Update(GameTime gameTime)
-    {
-        Bounds.Position += Velocity * gameTime.GetElapsedSeconds() * 30;
-    }
+### Broadphase Sizing
 
-    public void OnCollision(CollisionEventArgs collisionInfo)
-    {
-        RandomizeVelocity();
-        Bounds.Position -= collisionInfo.PenetrationVector;
-    }
+Each `Layer` owns its own broadphase structure. When you use `SpatialHash`, that means different layers can use different cell sizes.
 
+This is allowed, but it has tradeoffs:
 
-    private void RandomizeVelocity()
-    {
-        Velocity.X = Random.Shared.Next(-1, 2);
-        Velocity.Y = Random.Shared.Next(-1, 2);
-    }
-}
-```
+- it does not usually change collision correctness
+- it can change candidate counts and query cost significantly
+- it makes tuning harder because each layer may behave differently under load
 
-### Setting up the game
+As a default recommendation, start with the same `SpatialHash` size for all layers in one `CollisionWorld2D`, or at least keep them similar. This gives you a more predictable baseline and makes it easier to reason about performance across layer pairs.
 
-First, we define our properties and fields
+Use different sizes only when you have a clear reason, such as:
 
-```csharp
-private readonly List<IEntity> _entities = new List<IEntity>();
-private readonly CollisionComponent _collisionComponent;
-const int MapWidth = 500;
-const int MapHeight = 500;
-```
+- one layer has much smaller or denser actors than another
+- one layer is measured to perform better with a different cell size
+- you are deliberately tuning separate workloads after profiling
 
-Then we Initialize our game by creating entities and adding them to the `CollisionComponent`.
+If layers collide with each other frequently, similar broadphase settings are usually easier for consumers to understand and maintain.
 
-```csharp
+### Dynamic vs Static Layers
 
-public Game1()
-{
-    _graphics = new GraphicsDeviceManager(this);
-    _collisionComponent = new CollisionComponent(new RectangleF(0,0, MapWidth, MapHeight));
+Layers also control whether their broadphase is rebuilt during synchronization.
 
-    Content.RootDirectory = "Content";
-    IsMouseVisible = true;
-}
+- `Layer.IsDynamic = true` means the layer participates in rebuilds during `Layer.Reset()` or `CollisionWorld2D.RebuildDynamicLayers()`
+- `Layer.IsDynamic = false` means the layer skips that rebuild work
 
-protected override void Initialize()
-{
-    base.Initialize();
-    _graphics.PreferredBackBufferHeight = MapHeight;
-    _graphics.PreferredBackBufferWidth = MapWidth;
-    _graphics.ApplyChanges();
+Use dynamic layers for moving actors and static layers for fixed world geometry or other layers whose contents do not move after insertion.
 
-    // Create some objects to use in the collision demo
-    for (var i = 0; i < 50; i++)
-    {
-        var size = Random.Shared.Next(20, 40);
-        var position = new Vector2(Random.Shared.Next(-MapWidth, MapWidth * 2), Random.Shared.Next(0, MapHeight));
-        if (i % 2 == 0)
-        {
-            _entities.Add(new BallEntity(new CircleF(position, size)));
-        }
-        else
-        {
-            _entities.Add(new CubeEntity(new RectangleF(position, new SizeF(size, size))));
-        }
-    }
+## Migration From 5.5.1
 
-    // Add those objects to the collisionComponent so it will do the collision checking for us
-    foreach (IEntity entity in _entities)
-    {
-        _collisionComponent.Insert(entity);
-    }
-}
-```
+If you are coming from MonoGame.Extended 5.5.1, the most important changes are:
 
-### Updating the game
-In the `Update` method, we update all entities and the `CollisionComponent`.
+- `IShapeF` is no longer the collision system abstraction
+- `ICollisionActor` now exposes `CollisionShape2D Shape`
+- `ICollisionActor` no longer uses callback based collision methods
+- `CollisionWorld2D` is the new primary actor/world API
+- low level collision code now uses explicit bounding volume types
+- collision filtering now uses explicit layer pair rules
 
-```csharp
-protected override void Update(GameTime gameTime)
-{
-    // Make sure each entity moves around the screen
-    foreach (IEntity entity in _entities)
-    {
-        entity.Update(gameTime);
-    }
+For detailed before/after mappings and upgrade examples, see [Migrating from 5.5.1](./migration.md).
 
-    // Make sure all collisions are detected and the OnCollision event for each is called
-    _collisionComponent.Update(gameTime);
+## What to Read Next
 
-    base.Update(gameTime);
-}
-```
-
-### Drawing the final result
-
-```csharp
-protected override void Draw(GameTime gameTime)
-{
-    GraphicsDevice.Clear(Color.CornflowerBlue);
-
-    // Draw all the entities
-    _spriteBatch.Begin();
-    foreach (IEntity entity in _entities)
-    {
-        entity.Draw(_spriteBatch);
-    }
-
-    _spriteBatch.End();
-
-    base.Draw(gameTime);
-}
-```
-
-### Result
-
-![collision](collision.gif)
-
-## Advanced Topics (Optional)
-
-### Space Algorithms
-
-Currently there are 2 Space Algorithms implemented:
-1. `QuadTree`
-1. `SpatialHash`
-
-#### Space Algorithms: QuadTree
-
-A `QuadTree` is a data structure that starts off with a single rectangular area.  Entities are added, and if they reach the maximum number for that rectangular area (25 by default), the area is split up into 4 equal size parts or Quadrants.  This can continue until the maximum depth is reached (7 by default).
-
-The benefit is that you reduce the number of entities you have to check collisions on, since you keep partitioning the screen into smaller and smaller sets of entities.
-
-The management class is `QuadTreeSpace` which uses the `QuadTree`.
-
-Example creation of a QuadTreeSpace:
-```csharp
-QuadTreeSpace quadTreeSpace = new QuadTreeSpace(new RectangleF(x, y, width, height));
-```
-See [QuadTrees](https://en.wikipedia.org/wiki/Quadtree) on Wikipedia for generic more information.
-
-#### Space Algorithms: SpatialHash
-
-Think of mipmaps or approximations.  The screen is split up into N sections, and the object is either in that large section or not.
-
-Example creation of a SpatialHash:
-```csharp
-SpatialHash shash = new SpatialHash(new Vector2(32, 32));
-```
-See [Spatial Hashing](https://www.gamedev.net/tutorials/programming/general-and-gameplay-programming/spatial-hashing-r2697/) on GameDev.
-
-### Layer
-
-You can create a Layer and `Insert` "entities" (Instances of classes that extend `ICollisionAgent`).  Once you've added the entities, you can `Add` the Layer into a `CollisionComponent`.  Additionally, you may also add the layer without entities, so long as in your `ICollisionAgent` class you override the `LayerName` property so you can modify it to match the name of the layer you pass into the `CollisionComponent`.
-
-```csharp
-QuadTreeSpace quadTreeSpace = new QuadTreeSpace(new RectangleF(x, y, width, height));
-Layer myQuadLayer = new Layer(quadTreeSpace);
-// or
-SpatialHash shash = new SpatialHash(new Vector2(32, 32));
-Layer mySHashLayer = new Layer(shash);
-```
+- [Collision Quick Start](./quick-start.md) for the main 6.0 setup path
+- [Migrating from 5.5.1](./migration.md) if you are upgrading existing code
+- [Collision Technical Reference](./technical-reference.md) for architecture, lifecycle, and performance details
+- [2D Geometry](./2d-geometry.md) for the low level shape and `Collision2D` reference

@@ -8,14 +8,14 @@ import zoomToPointDesktop from './zoom-to-point-desktop.webm'
 import zoomToPointAndroid from './zoom-to-point-android.webm'
 
 :::tip[Up to date]
-This page is **up to date** for MonoGame.Extended `@mgeversion@`.  If you find outdated information, [please open an issue](https://github.com/monogame-extended/monogame-extended.github.io/issues).
+This page is **up to date** for MonoGame.Extended `@mgeversion@`. If you find outdated information, [please open an issue](https://github.com/monogame-extended/monogame-extended.github.io/issues).
 :::
 
-The `OrthographicCamera` provides a 2D camera system with no depth perception, making it ideal for 2D games.  It uses transformation matrices to control what portion of your game world is visible on the screen without requiring you to manually reposition every game object.
+The `OrthographicCamera` provides a 2D camera system with no depth perception, making it ideal for 2D games. It uses transformation matrices to control what portion of your game world is visible on the screen without requiring you to manually reposition every game object.
 
 ## Understanding the Camera System
 
-Before diving into the implementation, it is helpful to understand how the camera works.  Instead of moving all your game objects (enemies, players, tiles, backgrounds) every frame to simulate camera movement, the `OrthographicCamera` users matrix mathematics to transform the rendering view. Your game objects remain at their world positions while the camera determines which portion of the world is rendered and how it appears on the screen.
+Before diving into the implementation, it is helpful to understand how the camera works. Instead of moving all your game objects (enemies, players, tiles, backgrounds) every frame to simulate camera movement, the `OrthographicCamera` uses matrix mathematics to transform the rendering view. Your game objects remain at their world positions while the camera determines which portion of the world is rendered and how it appears on the screen.
 
 This approach offers several advantages:
 
@@ -26,11 +26,11 @@ This approach offers several advantages:
 
 ## Creating and Initializing the Camera
 
-To use an `OrthographicCamera` in your game, you need to create an instance during initialization.  WWhile you can create a camera without a viewport adapter, using one is highly recommended for proper screen scaling across different resolutions.
+To use an `OrthographicCamera` in your game, you need to create an instance during initialization. While you can create a camera without a viewport adapter, using one is highly recommended for proper screen scaling across different resolutions.
 
 ### Basic Camera Setup
 
-The following example whos how to initialize a camera with a `BoxingViewportAdapter`, which maintains your target aspect ration regardless of the actual widow size:
+The following example shows how to initialize a camera with a `BoxingViewportAdapter`, which maintains your target aspect ratio regardless of the actual window size:
 
 ```cs
 private OrthographicCamera _camera;
@@ -42,15 +42,15 @@ protected override void Initialize()
     // Create a viewport adapter to that maintains an 800x480 virtual resolution
     BoxingViewportAdapter viewportAdapter = new BoxingViewportAdapter(Window, GraphicsDevice, 800, 480);
 
-    // Initialize the camera with the viewport adapater
+    // Initialize the camera with the viewport adapter
     _camera = new OrthographicCamera(viewportAdapter);
 }
 ```
 
 :::tip
-Using a `ViewportAdapter` provides consistent coordinate systems across different screen resolutions and aspect ratios.  Choose the adapter type based on your scaling needs:
+Using a `ViewportAdapter` provides consistent coordinate systems across different screen resolutions and aspect ratios. Choose the adapter type based on your scaling needs:
 
-- `BoxingViewportAdapter`: Maintains aspect ratio with letterboxing/pillerboxing
+- `BoxingViewportAdapter`: Maintains aspect ratio with letterboxing/pillarboxing
 - `ScalingViewportAdapter`: Stretches to fill the screen
 - `DefaultViewportAdapter`: No scaling, uses actual screen dimensions
 
@@ -64,11 +64,11 @@ If you don't need scaling features, you can create a camera directly with a `Gra
 _camera = new OrthographicCamera(GraphicsDevice);
 ```
 
-This approach uses the graphic device's viewport dimensions as the camera's size.
+This approach uses the graphics device's viewport dimensions as the camera's size.
 
 ## Apply the Camera Transformations
 
-Creating a camera instance alone does not affect your rendering.  You must apply the camera's view matrix to your `SpriteBatch` to see its effects
+Creating a camera instance alone does not affect your rendering. You must apply the camera's view matrix to your `SpriteBatch` to see its effects
 
 ### Using the View Matrix
 
@@ -93,7 +93,7 @@ protected override void Draw(GameTime gameTime)
 ```
 
 :::important
-Objects drawn within a `SpriteBatch.Begin/End` block that uses the camera's transform matrix should use **world coordinates**, not screen coordinates.  he camera handles the transformation from world space to screen space.
+Objects drawn within a `SpriteBatch.Begin/End` block that uses the camera's transform matrix should use **world coordinates**, not screen coordinates. The camera handles the transformation from world space to screen space.
 :::
 
 ### Understanding the Transformation
@@ -108,7 +108,7 @@ In the example above, the rectangle at world position (250, 250) will appear at 
 
 ## Moving the Camera
 
-Camera movement is typically handled in the `Update` method.  The `OrthographicCamera` provides several ways to change the camera's positions
+Camera movement is typically handled in the `Update` method. The `OrthographicCamera` provides several ways to change the camera's positions
 
 ### Using the Move Method
 
@@ -122,7 +122,7 @@ private void GetMovementDirection()
 
     if (state.IsKeyDown(Keys.Down))
     {
-        movementDIrection += Vector2.UnitY;
+        movementDirection += Vector2.UnitY;
     }
 
     if (state.IsKeyDown(Keys.Up))
@@ -156,7 +156,7 @@ protected override void Update(GameTime gameTime)
 ```
 
 :::note
-The `Move` method respects the camera's rotation.  If the camera is rotated, the movement direction is transformed accordingly, making "up" always relative to the camera's orientation.
+The `Move` method respects the camera's rotation. If the camera is rotated, the movement direction is transformed accordingly, making "up" always relative to the camera's orientation.
 :::
 
 ### Using the Position Property
@@ -173,7 +173,7 @@ _camera.Position += new Vector2(10, 0);
 
 ### Following a Game Object
 
-A common pattern is making the camera follow a player or other entity.  Use the `LookAt` method to center the camera on a specific world position:
+A common pattern is making the camera follow a player or other entity. Use the `LookAt` method to center the camera on a specific world position:
 
 ```cs
 protected override void Update(GameTime gameTime)
@@ -190,7 +190,7 @@ The `LookAt` method automatically adjusts the camera position so the specified p
 
 ## Controlling Camera Zoom
 
-The camera's `Zoom` property controls the magnification level.  The default zoom value is `1.0f`, where higher values zoom in (objects appear larger) and lower values zoom out (objects appear smaller).
+The camera's `Zoom` property controls the magnification level. The default zoom value is `1.0f`, where higher values zoom in (objects appear larger) and lower values zoom out (objects appear smaller).
 
 ### Using Zoom Methods
 
@@ -231,7 +231,7 @@ _camera.Zoom = 2.0f;
 
 ### Setting Zoom Constraints
 
-You can set a minimum and maximum allowed zoom level for your camera using the `MinimumZoom` and `MaximumZoom` properties.  When the zoom level changes, either through the `ZoomIn/ZoomOut` methods or when setting the value directly with the `Zoom` property, the value will be clamped to respect the minimum and maximum ranges configured:
+You can set a minimum and maximum allowed zoom level for your camera using the `MinimumZoom` and `MaximumZoom` properties. When the zoom level changes, either through the `ZoomIn/ZoomOut` methods or when setting the value directly with the `Zoom` property, the value will be clamped to respect the minimum and maximum ranges configured:
 
 ```cs
 // Set a minimum zoom of 1.0f
@@ -341,7 +341,7 @@ protected override void Update(GameTime gameTime)
 
 #### Interaction with Zoom Constraints
 
-The zoom-to-point method respect all zoom constraints:
+The zoom-to-point method respects all zoom constraints:
 
 - **Minimum/Maximum Zoom**: If the zoom would exceed `MinimumZoom` or `MaximumZoom`, the zoom is clamped and no position adjustment occurs
 - **World Bounds**: When world bounds are enabled, the camera position is automatically clamped after the zoom adjustment to ensure the view stays within bounds.
@@ -361,7 +361,7 @@ _camera.ZoomIn(0.2f, mouseWorld);
 ```
 
 :::tip
-The zoom center is specified in world coordinates, not screen coordinates.  Use `ScreenToWorld()` to convert mouse or touch positions before passing them to the zoom methods.
+The zoom center is specified in world coordinates, not screen coordinates. Use `ScreenToWorld()` to convert mouse or touch positions before passing them to the zoom methods.
 :::
 
 ## Rotating the Camera
@@ -375,7 +375,7 @@ The `Rotate` method incrementally adjusts the rotation:
 ```cs
 private void HandleRotationInput()
 {
-    KeyboardState state = Keyboard.GeState();
+    KeyboardState state = Keyboard.GetState();
     float rotationSpeed = 0.01f;
 
     if(state.IsKeyDown(Keys.OemSemicolon))
@@ -414,7 +414,7 @@ The `Origin` property defines the pivot point for rotation and zoom. By default,
 
 ```cs
 // Rotate around the top-left corner
-_camera.Origin = Vector2.Zer;
+_camera.Origin = Vector2.Zero;
 
 // Rotate around custom point
 _camera.Origin = new Vector2(100, 100);
@@ -422,7 +422,7 @@ _camera.Origin = new Vector2(100, 100);
 
 ## Constraining Camera Movement with World Bounds
 
-In many game,s you want to prevent the camera from showing areas outside your playable world.  The `OrthographicCamera` provides world bounds constraints that automatically clamp the camera position and zoom to keep the view within a defied rectangular area.
+In many game,s you want to prevent the camera from showing areas outside your playable world.  The `OrthographicCamera` provides world bounds constraints that automatically clamp the camera position and zoom to keep the view within a defined rectangular area.
 
 ### Enabling World Bounds Constraints
 
@@ -435,8 +435,8 @@ protected override void Initialize()
 
     BoxingViewportAdapter viewportAdapter = new BoxingViewportAdapter(Window, GraphicsDevice, 800, 480);
 
-    // Define the boundaries of yoru game world
-    Rectangle worldBonds = new Rectangle(0, 0, 1920, 1080);
+    // Define the boundaries of your game world
+    Rectangle worldBounds = new Rectangle(0, 0, 1920, 1080);
 
     // Enable world bounds constraints
     _camera.EnableWorldBounds(worldBounds);
@@ -457,7 +457,7 @@ This resets the world bounds to `Rectangle.Empty` and disables all boundary chec
 
 ### Constraining Zoom with World Bounds
 
-By default, world bounds only constrain camera position.  To also prevent zooming out beyond the world bounds, enable zoom clamping:
+By default, world bounds only constrain camera position. To also prevent zooming out beyond the world bounds, enable zoom clamping:
 
 ```cs
 _camera.EnableWorldBounds(worldBounds);
@@ -466,20 +466,20 @@ _camera.EnableWorldBounds(worldBounds);
 _camera.IsZoomClampedToWorldBounds = true;
 ```
 
-With zoom clamping enabled, the camera calculates and enforces a minimum zoom level based on the world bounds and viewport size.  This ensures you can never zoom out far enough to see areas beyond the world bounds.
+With zoom clamping enabled, the camera calculates and enforces a minimum zoom level based on the world bounds and viewport size. This ensures you can never zoom out far enough to see areas beyond the world bounds.
 
 :::tip
-Set `IsZoomClampedToWorldBounds = true` when you want strict boundary enforcement.  Leave it `false` if you want toallow zooming out beyond the world (for example, to show a minimap view or level select screen).
+Set `IsZoomClampedToWorldBounds = true` when you want strict boundary enforcement. Leave it `false` if you want toallow zooming out beyond the world (for example, to show a minimap view or level select screen).
 :::
 
 ### Understanding World Bounds Behavior
 
-When world bounds are enabled, the camera applies the following constraings:
+When world bounds are enabled, the camera applies the following constraints:
 
-1. **Position Clamping**: The camera position is automatically adjusted so the viewport edges stay within the world bounds.  If you try to move the camera beyond the boundaries, it will stop at the edge.
+1. **Position Clamping**: The camera position is automatically adjusted so the viewport edges stay within the world bounds. If you try to move the camera beyond the boundaries, it will stop at the edge.
 2. **Zoom Clamping** (when enabled): If `IsZoomClampedToWorldBounds` is `true`, the camera prevents zooming out to a level where the viewport would exceed the world bounds.
 3. **Small World Handling**: If the world bounds are smaller than the viewport (e.g. a 400x300 world with a 800x480 viewport), the camera automatically centers itself on the world bounds rather than clamping to edges
-4. **Rotation Limitations**: World bounds clamping only works when the camera has no rotation (`Rotation = 0`) and the pitch is at default (`Pitch = 1.0f`).  This is because calculating accurate boundaries with rotation is complex.
+4. **Rotation Limitations**: World bounds clamping only works when the camera has no rotation (`Rotation = 0`) and the pitch is at default (`Pitch = 1.0f`). This is because calculating accurate boundaries with rotation is complex.
 
 ### Checking World Bounds Status
 
@@ -495,7 +495,7 @@ if(_camera.IsClampedToWorldBounds)
 
 ### Example: Camera Following Player with World Bounds
 
-Here's a complete example demonstrating camera following a payer while respecting world bounds:
+Here's a complete example demonstrating camera following a player while respecting world bounds:
 
 ```cs
 public class Game1 : Game
@@ -626,7 +626,7 @@ These conversion methods account for all camera transformations including positi
 
 ## Parallax Scrolling
 
-The `OrthographicCamera` supports parallax scrolling effects, where different layers move at different speeds to create a sense fo depth.  This is achieved using the `GetViewMatrix` overload that accepts a parallax factor.
+The `OrthographicCamera` supports parallax scrolling effects, where different layers move at different speeds to create a sense of depth. This is achieved using the `GetViewMatrix` overload that accepts a parallax factor.
 
 ### Using Parallax Factors
 
@@ -648,21 +648,21 @@ protected override void Draw(GameTime gameTime)
     _spriteBatch.End();
 
     // Draw mid-ground layer (moves at 50% speed)
-    Matrix midgroundMarix = _camera.GetViewMatrix(new Vector2(0.5f, 0.5f));
-    _spritBatch.Begin(transformMatrix: midgroundMatrix);
+    Matrix midgroundMatrix = _camera.GetViewMatrix(new Vector2(0.5f, 0.5f));
+    _spriteBatch.Begin(transformMatrix: midgroundMatrix);
     DrawMidgroundObject(_spriteBatch);
     _spriteBatch.End();
 
     // Draw foreground layer (moves at full camera speed)
     Matrix foregroundMatrix = _camera.GetViewMatrix(Vector2.One);
-    _spritBatch.Begin(transformMatrix: foregroundMatrix);
+    _spriteBatch.Begin(transformMatrix: foregroundMatrix);
     DrawForegroundObject(_spriteBatch);
     _spriteBatch.End();
 }
 ```
 
 :::tip
-You can use different parallax factors for X and Y axes.  For example `new Vector2(0.5f, 1.0f)` would create a horizontal parallax while maintaining vertical synchronization.
+You can use different parallax factors for X and Y axes. For example `new Vector2(0.5f, 1.0f)` would create a horizontal parallax while maintaining vertical synchronization.
 :::
 
 ### Checking Visibility
@@ -686,7 +686,7 @@ if (boundsVisibility != ContainmentType.Disjoint)
 
 ## Checking Object Visibility
 
-When working with large game worlds, you often need to determine which bojects are currently visible in the camera's view.  Drawing only visible objects is a critical optimization technique that can significantly imporve performance.  The `OrthographicCamera` provides `Contain` methods to check whether points or rectangles are within the camera's viewable area.
+When working with large game worlds, you often need to determine which objects are currently visible in the camera's view. Drawing only visible objects is a critical optimization technique that can significantly improve performance. The `OrthographicCamera` provides `Contain` methods to check whether points or rectangles are within the camera's viewable area.
 
 ### Understanding Containment Types
 
@@ -757,7 +757,7 @@ protected override void Draw(GameTime gameTime)
 ```
 
 :::tip
-Use `ContainmentType.Disjoint` to check if an object is *not* visible.  This is more effcient than checking for `Contains` or `Intersects` individually, especially when you only care about whether to skip drawing an object.
+Use `ContainmentType.Disjoint` to check if an object is *not* visible. This is more efficient than checking for `Contains` or `Intersects` individually, especially when you only care about whether to skip drawing an object.
 :::
 
 ### Checking Partial Visibility
@@ -827,7 +827,7 @@ if (_camera.BoundingRectangle.Contains(_enemy.Position))
 
 - **`WorldBounds`**: Gets the bounding rectangle that defines camera movement limits (read-only)
 - **`IsClampedToWorldBounds`**: Gets whether the camera is currently constrained within world bounds (read-only)
-- **`IsZoomClampedToWorldBounds`*:  Gets or sets whether zoom should be clamped to prevent viewing beyond world bounds
+- **`IsZoomClampedToWorldBounds`**: Gets or sets whether zoom should be clamped to prevent viewing beyond world bounds
 
 ## Deprecated Features
 

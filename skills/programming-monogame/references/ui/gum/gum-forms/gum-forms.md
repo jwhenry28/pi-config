@@ -6,7 +6,7 @@ description: An example document for gum
 ---
 
 :::tip[Up to date]
-This page is **up to date** for MonoGame.Extended `@mgeversion@`.  If you find outdated information, [please open an issue](https://github.com/monogame-extended/monogame-extended.github.io/issues).
+This page is **up to date** for MonoGame.Extended `@mgeversion@`. If you find outdated information, [please open an issue](https://github.com/monogame-extended/monogame-extended.github.io/issues).
 :::
 Gum provides a collection of flexible, fully customizable controls which can be added to your project with just a few lines of code. 
 
@@ -22,7 +22,7 @@ This document provides setup and an introduction to using Gum forms controls pur
 
 ## Setup
 
-Before using Gum, you must add the Gum.MonoGame [nuget package](https://www.nuget.org/packages/Gum.MonoGame) to your project.
+Before using Gum, you must add the Gum.MonoGame [NuGet package](https://www.nuget.org/packages/Gum.MonoGame) to your project.
 
 Gum Forms uses GumService initialization, updating, and drawing.
 

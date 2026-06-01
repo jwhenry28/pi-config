@@ -1,5 +1,9 @@
 You are using the pi-config repository, which contains the user's personal pi configuration, including prompts, skills, extensions, workflows, and supporting agent resources.
 
+## Responses
+
+Keep all responses reasonably concise. Do not use multiple examples when one will suffice. Do not make the same point multiple times. 
+
 ## User Interaction
 
 When you need clarification, missing requirements, or a user decision, use `ask_user` to ask the user directly instead of guessing.

@@ -28,7 +28,7 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// Run CSharpier on the file
-		const { code, stderr } = await pi.exec("dotnet", ["csharpier", "format", path], {
+		const { code, stderr } = await pi.exec("csharpier", ["format", path], {
 			cwd: ctx.cwd,
 		});
 
@@ -46,7 +46,7 @@ export default function (pi: ExtensionAPI) {
 		handler: async (_args, ctx) => {
 			ctx.ui.notify("Running CSharpier on project...", "info");
 
-			const { code, stdout, stderr } = await pi.exec("dotnet", ["csharpier", "format", "."], {
+			const { code, stdout, stderr } = await pi.exec("csharpier", ["format", "."], {
 				cwd: ctx.cwd,
 			});
 
