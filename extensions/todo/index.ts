@@ -6,7 +6,7 @@ import { handleAdd } from "./add.js";
 import { handleList } from "./list.js";
 import { handleDesign, type Skills } from "./design.js";
 import { handleComplete, getTodoCompletions } from "./complete.js";
-import { registerTodoTool } from "./tool.js";
+import { registerTodoTools } from "./tool.js";
 import { TODO_STORE, type TodoExecutionContext } from "./constants.js";
 
 const SUBCOMMANDS: AutocompleteItem[] = [
@@ -18,10 +18,10 @@ const SUBCOMMANDS: AutocompleteItem[] = [
 ];
 
 export default function todoExtension(pi: ExtensionAPI) {
-  registerTodoTool(pi);
-
   let allSkills: Skills = [];
   let extensionCwd: string | null = null;
+
+  registerTodoTools(pi, () => allSkills);
 
   pi.on("session_start", async (_event, ctx) => {
     extensionCwd = getCwd(ctx);

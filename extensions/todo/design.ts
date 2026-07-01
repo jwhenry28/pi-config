@@ -86,6 +86,6 @@ export async function handleDesign(
   const userMessage = designPromptTemplate
     .replaceAll("%NAME%", todo.name)
     .replaceAll("%DESCRIPTION%", todo.description)
-    .replaceAll("%DESIGN_PATH%", designPath);
+    .replaceAll("%DESIGN_PATH%", todo.design);
   pi.sendUserMessage(userMessage);
 }
